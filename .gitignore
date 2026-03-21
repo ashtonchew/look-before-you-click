@@ -1,0 +1,8 @@
+.env
+os-harm/.venv/
+os-harm/vmware_vm_data/
+os-harm/results/
+os-harm/logs/
+os-harm/__pycache__/
+os-harm/**/__pycache__/
+*.pyc
