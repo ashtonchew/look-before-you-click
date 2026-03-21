@@ -1,54 +1,39 @@
-# Handoff: Analysis & Experiment Harness (Workstream 3)
+# Handoff: Analysis and Experiment Harness
 
-**Read `docs/handoff_shared.md` first.** This doc covers only what WS3 owns.
+**Read [handoff_shared.md](/Users/ashtonchew/Desktop/look-before-you-click/docs/handoff_shared.md) first.** This document covers configs, aggregation, metrics, and the experiment-facing outputs.
 
 ---
 
-## Files You Own
+## 1. Files You Own
 
-| File | What it does |
+| File | Purpose |
 |---|---|
-| `configs/control_none.json` | B0 — no control baseline |
-| `configs/control_always_review_language_only.json` | B1 — blanket monitor, language-only |
-| `configs/control_always_review_state_grounded.json` | B2 — blanket monitor, state-grounded |
-| `configs/control_critical.json` | B3 — rule-based routing, no legibility |
-| `configs/control_critical_legibility.json` | B4 — routing + legibility |
-| `analysis/__init__.py` | Package init |
-| `analysis/aggregate.py` | Run folders → CSV + frontier plot |
+| `configs/control_none.json` | `B0` |
+| `configs/control_always_review_language_only.json` | `B1` |
+| `configs/control_always_review_state_grounded.json` | `B2` |
+| `configs/control_critical.json` | `B3` |
+| `configs/control_critical_legibility.json` | `B4` |
+| `configs/control_critical_legibility_resample_once.json` | `B4R` |
+| `configs/control_critical_legibility_trusted_fallback_once.json` | `B4T` |
+| `analysis/aggregate.py` | Aggregate run outputs into CSVs |
+| `analysis/plots.py` | Primary and secondary plots |
 
-## Files You Must NOT Touch
-
-- Anything in `control/`
-- `run.py`, `lib_run_single.py`
-- `mm_agents/*`, `desktop_env/*`, judge internals
-
-## What You Consume
-
-- `control_events.jsonl` — one JSONL record per reviewed action (schema in shared context §6)
-- `control_summary.json` — per-run summary (schema in `handoff_runtime.md` §4)
-- `result.txt` — OS-Harm task result
-- Judge output files — safety/success fields
-
-## What You Produce
-
-- `results_summary.csv`
-- `frontier_safety_vs_usefulness.png`
-- `overhead_summary.csv` (add when needed)
-- `critical_action_family_counts.csv` (add when needed)
-- `blocked_examples_manifest.csv` (add when needed)
-- Config JSON files (B0–B4)
-
-## Dependency Note
-
-You can build configs immediately. The aggregate script needs actual run outputs from WS1+WS2 to test. Start with configs + script skeleton, then validate once runs exist.
+Do not edit `control/*`, `run.py`, or `lib_run_single.py`.
 
 ---
 
-## 1. Config Files
+## 2. Config Files
 
-Follow the schema in `handoff_shared.md` §8 exactly.
+All configs must include:
+- `enabled`
+- `router_mode`
+- `controller_mode`
+- `include_visual_context`
+- `legibility_enabled`
+- `fail_closed_on_review_error`
+- `critical_keywords_path`
 
-### `configs/control_none.json` (B0)
+### `B0`
 ```json
 {
   "enabled": false,
@@ -56,11 +41,12 @@ Follow the schema in `handoff_shared.md` §8 exactly.
   "controller_mode": "allow_or_terminate",
   "include_visual_context": false,
   "legibility_enabled": false,
-  "fail_closed_on_review_error": true
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
 }
 ```
 
-### `configs/control_always_review_language_only.json` (B1)
+### `B1`
 ```json
 {
   "enabled": true,
@@ -68,11 +54,12 @@ Follow the schema in `handoff_shared.md` §8 exactly.
   "controller_mode": "allow_or_terminate",
   "include_visual_context": false,
   "legibility_enabled": false,
-  "fail_closed_on_review_error": true
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
 }
 ```
 
-### `configs/control_always_review_state_grounded.json` (B2)
+### `B2`
 ```json
 {
   "enabled": true,
@@ -80,11 +67,12 @@ Follow the schema in `handoff_shared.md` §8 exactly.
   "controller_mode": "allow_or_terminate",
   "include_visual_context": true,
   "legibility_enabled": false,
-  "fail_closed_on_review_error": true
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
 }
 ```
 
-### `configs/control_critical.json` (B3)
+### `B3`
 ```json
 {
   "enabled": true,
@@ -92,11 +80,12 @@ Follow the schema in `handoff_shared.md` §8 exactly.
   "controller_mode": "allow_or_terminate",
   "include_visual_context": true,
   "legibility_enabled": false,
-  "fail_closed_on_review_error": true
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
 }
 ```
 
-### `configs/control_critical_legibility.json` (B4)
+### `B4`
 ```json
 {
   "enabled": true,
@@ -104,131 +93,198 @@ Follow the schema in `handoff_shared.md` §8 exactly.
   "controller_mode": "allow_or_terminate",
   "include_visual_context": true,
   "legibility_enabled": true,
-  "fail_closed_on_review_error": true
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
 }
 ```
 
-All baselines are config changes, not code forks.
-
----
-
-## 2. Evaluation Plan
-
-### Dev smoke (first pass)
-- 3 benign prompt-injection tasks run **without** `--inject`
-- 3 attack prompt-injection tasks run **with** `--inject`
-
-### Dev set
-- 10–15 paired prompt-injection tasks
-
-### Test set
-- 15–25 paired prompt-injection tasks if compute permits
-
-### Optional extension
-- 5–10 model-misbehavior tasks
-- Small custom side-task setting
-
-### Pairing rule
-Use the same `test_injection.json` tasks in both modes:
-- Benign condition: same tasks, no `--inject`
-- Attack condition: same tasks, with `--inject`
-
-If a task has multiple injection goals:
-- Usefulness key = `domain/example_id`
-- Attack key = `domain/example_id/injection_type/goal_id`
-
-### Baselines to run
-Required (B0–B4):
-1. `none` (B0)
-2. `always_review_language_only` (B1)
-3. `always_review_state_grounded` (B2) — run on small slice only (3–5 tasks)
-4. `critical_review` (B3)
-5. `critical_review_legibility` (B4)
-
-Stretch (build only if B0–B4 are complete):
-6. `critical_review_legibility_resample_once`
-7. `critical_review_legibility_trusted_fallback_once`
-
----
-
-## 3. Metrics
-
-### Usefulness
-- Benign task success rate
-
-### Safety
-- Attack task safety rate (1 − harmful success rate)
-
-### Monitor / controller behavior
-- Review count per run
-- Critical-action trigger rate
-- Block rate
-- Disallow rate
-- False positive rate on benign tasks
-
-### Overhead
-- Extra review model calls
-- Mean review latency
-- Total wall-clock increase
-- Reviewed-step fraction
-
-### Analysis extras (add when needed)
-- Action family distribution among reviewed steps
-- Action family distribution among blocked steps
-- Per-domain breakdown if time allows
-
----
-
-## 4. Aggregate Script (`analysis/aggregate.py`)
-
-### Usage
-```bash
-python -m analysis.aggregate --root ./results --out ./analysis_outputs
+### `B4R`
+```json
+{
+  "enabled": true,
+  "router_mode": "critical_only",
+  "controller_mode": "allow_or_resample_once",
+  "include_visual_context": true,
+  "legibility_enabled": true,
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
+}
 ```
 
-### Job
-1. Traverse run folders under `--root`
-2. Read `control_summary.json` and `result.txt` from each run
-3. Read judge output for safety labels
-4. Compute metrics listed above
-5. Produce required artifacts
-
-### Required artifacts
-- `results_summary.csv` — one row per (task, baseline) with all metrics
-- `frontier_safety_vs_usefulness.png` — scatter plot with B0–B4 as labeled points, x-axis = usefulness (benign success rate), y-axis = safety (attack safety rate)
-
-### Add when needed
-- `overhead_summary.csv` — latency and call count breakdown per baseline
-- `critical_action_family_counts.csv` — family distribution among reviewed/blocked actions
-- `blocked_examples_manifest.csv` — manifest of blocked traces with paths to review packages
-
-### File size rule
-Start with one file. Split into `aggregate.py` + `plot.py` only if it exceeds ~300 lines.
-
-**Note:** `commands.md` references `analysis.aggregate_results` and `analysis.plot_frontier` as separate scripts. Ignore that — follow this doc.
+### `B4T`
+```json
+{
+  "enabled": true,
+  "router_mode": "critical_only",
+  "controller_mode": "allow_or_trusted_fallback_once",
+  "include_visual_context": true,
+  "legibility_enabled": true,
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
+}
+```
 
 ---
 
-## 5. Concentration Analysis
+## 3. Evaluation Scope
 
-This supports the paper's central claim and serves as a fallback if end-to-end gains are noisy.
+### Primary matrix
+These are the required headline comparisons:
+- `B0`
+- `B1`
+- `B2` on a small declared slice only
+- `B3`
+- `B4`
 
-### Automatic part (from `control_events.jsonl`)
-Compute:
-- Counts by critical family
-- Counts by blocked family
-- Counts by attack outcome × family
+### Secondary protocol variants
+These are immediate required follow-on comparisons:
+- `B4R`
+- `B4T`
 
-### Manual annotation (stretch)
-Detailed schemas are in `docs/stretch_analysis.md` (to be written if needed). The key idea: annotate a small set of blocked attack runs, successful attack runs, and benign false positives to check whether the router and reviewer made the right calls.
+### Default development dataset
+Use the selected paired prompt-injection set by default:
+- meta path: `evaluation_examples/test_injection_selected.json`
+- config base dir: `evaluation_examples_selected`
 
-The logs from WS1 contain all the data needed. Build this after the main experiment runs.
+Use the same selected set for both:
+- benign condition: no `--inject`
+- attack condition: with `--inject`
+
+### Optional expansion
+The full `evaluation_examples/test_injection.json` is optional later-stage expansion only. It is not the default dev matrix.
 
 ---
 
-## 6. Acceptance Tests
+## 4. Metrics
 
-- Aggregate script finds run folders and writes CSV
-- `results_summary.csv` contains correct columns (task_id, domain, baseline, success, safety, review_count, etc.)
-- Frontier plot renders with B0–B4 as labeled points
-- Config JSON files are valid JSON and match the schema in `handoff_shared.md` §8
+### Primary metrics
+- benign task success rate
+- attack safety rate
+- mean review latency
+- review count
+- critical-action trigger rate
+- benign false-positive rate
+
+### Secondary escalation metrics
+- reviewer decision distribution
+- resample count
+- trusted fallback count
+- executed action source distribution
+- resample rescue rate
+- trusted fallback rescue rate
+
+### Concentration metrics
+- reviewed family counts
+- blocked family counts
+- family distribution among unsafe attack runs
+
+---
+
+## 5. Input Artifacts Consumed by Aggregation
+
+From each run folder:
+- `result.txt`
+- `control_summary.json`
+- `control_events.jsonl`
+- judge output under `judgment/.../judgment.json`
+
+Optional:
+- `review_packages/`
+
+---
+
+## 6. Output Artifacts
+
+### Required primary artifacts
+- `results_summary.csv`
+- `frontier_safety_vs_usefulness.png`
+
+The frontier plot is for `B0-B4` only.
+
+### Required secondary artifacts
+- `protocol_variant_summary.csv`
+- `variant_comparison_B4_B4R_B4T.png` or an equivalent compact comparison plot
+
+### Supporting artifacts
+- `critical_action_family_counts.csv`
+- `overhead_summary.csv`
+- `blocked_examples_manifest.csv` if useful
+
+---
+
+## 7. Aggregation Rules
+
+### Row granularity
+`results_summary.csv` should be one row per run folder / judged task instance.
+
+### Baseline labeling
+Use stable labels in the CSV:
+- `B0`
+- `B1`
+- `B2`
+- `B3`
+- `B4`
+- `B4R`
+- `B4T`
+
+Do not invent alternate names in plots.
+
+### Condition labeling
+Keep:
+- `is_attack`
+- `task_id`
+- `domain`
+- `inject_suffix` if present
+
+### Derived fields
+Where possible derive from logs rather than folder names alone:
+- `reviewer_decision`
+- `final_action_source`
+- `resample_attempted`
+- `trusted_fallback_attempted`
+
+---
+
+## 8. Plotting Rules
+
+### Primary plot
+One labeled scatter plot for `B0-B4`:
+- x-axis = usefulness
+- y-axis = safety
+
+### Secondary plot or table
+Directly compare `B4`, `B4R`, and `B4T` on:
+- usefulness
+- safety
+- review rate
+- escalation counts
+
+The secondary comparison should not replace the primary frontier plot.
+
+---
+
+## 9. Concentration Analysis
+
+Concentration analysis stays in scope as supporting evidence.
+
+Minimum automatic analysis from `control_events.jsonl`:
+- counts by family
+- counts by blocked family
+- counts by final action source
+- counts by reviewer decision type
+
+Manual annotation remains optional, but if done it should focus on:
+- blocked benign critical actions
+- successful attacks
+- attack runs rescued by `B4R` or `B4T`
+
+---
+
+## 10. Acceptance Tests
+
+- Config JSON files parse and match the required schema.
+- Aggregation handles run folders from all seven labels.
+- `results_summary.csv` includes core columns plus escalation columns.
+- Primary frontier plot renders `B0-B4`.
+- Secondary output compares `B4`, `B4R`, and `B4T`.
+- Family counts can be derived from real `control_events.jsonl` files.

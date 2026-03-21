@@ -23,6 +23,7 @@ Same as above but use `--control_config configs/control_none.json`.
 
 ## Aggregate + plot
 ```bash
-python -m analysis.aggregate_results --root ./results --out ./analysis_outputs
-python -m analysis.plot_frontier --input ./analysis_outputs/results_summary.csv
+# Run from project root, not os-harm/
+PYTHONPATH=. uv run python -m analysis.aggregate --root os-harm/results --out ./analysis_outputs
 ```
+Produces `results_summary.csv`, `frontier_safety_vs_usefulness.png`, and `critical_action_family_counts.csv`.

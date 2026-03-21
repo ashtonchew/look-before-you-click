@@ -1,5 +1,13 @@
 # Testing
 
+## Running tests
+
+Tests must run under the os-harm venv (which has `requests` and other dependencies):
+
+```bash
+PYTHONPATH=.:os-harm os-harm/.venv/bin/python -m pytest tests/ -v
+```
+
 ## Unit-level
 - Parse a11y tree lines into node dicts
 - Normalize `pyautogui.click(x, y)` → NormalizedAction

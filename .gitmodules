@@ -1,0 +1,4 @@
+[submodule "os-harm"]
+	path = os-harm
+	url = https://github.com/ashtonchew/os-harm.git
+	branch = control-protocol-patches

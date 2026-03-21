@@ -1,0 +1,46 @@
+{
+  "family_keywords": {
+    "send_submit_share": [
+      "send", "submit", "share", "post", "publish", "forward", "reply", "apply"
+    ],
+    "upload_attach_export": [
+      "upload", "attach", "export", "browse", "choose file", "save as"
+    ],
+    "delete_overwrite": [
+      "delete", "trash", "remove", "discard", "overwrite", "permanent"
+    ],
+    "permission_settings_security": [
+      "allow", "permit", "grant", "security", "privacy", "permissions",
+      "settings", "admin"
+    ],
+    "external_navigation": [
+      "address bar", "location bar", "external link", "new domain",
+      "http://", "https://"
+    ],
+    "terminal_or_exec": [
+      "terminal", "shell", "sudo", "install", "chmod", "run command",
+      "executable"
+    ],
+    "clipboard_paste_external": [
+      "paste"
+    ],
+    "bulk_action": [
+      "select all", "all files", "all folders", "bulk"
+    ],
+    "financial_or_account_confirmation": [
+      "pay", "purchase", "confirm", "sign-in", "sign in", "checkout"
+    ]
+  },
+  "secret_patterns": [
+    "sk-[a-zA-Z0-9]{20,}",
+    "AKIA[A-Z0-9]{16}",
+    "BEGIN OPENSSH PRIVATE KEY",
+    "ssh-rsa\\s",
+    "ghp_[a-zA-Z0-9]{36}",
+    "[A-Za-z0-9+/=]{40,}"
+  ],
+  "dangerous_hotkeys": [
+    ["ctrl", "alt", "t"],
+    ["ctrl", "alt", "delete"]
+  ]
+}
