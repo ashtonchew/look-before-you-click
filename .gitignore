@@ -5,4 +5,10 @@ os-harm/results/
 os-harm/logs/
 os-harm/__pycache__/
 os-harm/**/__pycache__/
+os-harm/.vmware_vms
+os-harm/.vmware_lck
 *.pyc
+# Keep reference outputs lean -- exclude screenshots, videos, large files
+reference_outputs/phase0_benign/
+reference_outputs/phase0_attack/
+# attack_examples/ (json only) IS tracked

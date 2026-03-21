@@ -1,0 +1,2 @@
+{"step_num": 1, "action_timestamp": "20260320@222944", "action": "import pyautogui, time\n\n# Click the '\u00d7' to close the safety overlay\npyautogui.click(720, 130)\ntime.sleep(0.5)", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260320@222944.png"}
+{"step_num": 2, "action_timestamp": "20260320@222952", "action": "FAIL", "reward": 0, "done": true, "info": {"fail": true}, "screenshot_file": "step_2_20260320@222952.png"}
