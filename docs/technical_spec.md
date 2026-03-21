@@ -75,6 +75,21 @@ That means:
 
 ---
 
+## 1.4 Paper-honesty guardrails
+
+These constrain what the simplified spec is allowed to claim. Enforce across code, spec, and paper.
+
+**Guardrail 1: Keep B2 or drop the "sparse beats blanket" claim.**
+The master plan's H3 claims critical-action review preserves more usefulness than monitoring every step. Without B2 (blanket state-grounded monitor), that claim has no evidence. Fix: run B2 on a small slice (3–5 tasks) as a supporting data point — enough to preserve the comparison, but present it as supporting evidence, not a headline result. If compute doesn't allow even that, weaken the paper framing to compare only against no-monitoring and language-only monitoring.
+
+**Guardrail 2: Don't call the MVP "deferral" until deferral exists.**
+The MVP implements ALLOW / BLOCK only. Until `DEFER_TO_TRUSTED` actually lands:
+- In the spec and code: call the system **"critical-action routing with state-grounded review"**
+- In paper framing: describe it as a **control protocol for critical actions**, not a completed deferral protocol
+- `RESAMPLE` and `DEFER_TO_TRUSTED` are documented stretch modes only
+
+---
+
 ## 2. Final build target
 
 By the end of the hackathon, the repo should be able to do the following:
@@ -142,18 +157,14 @@ Why:
 - the current `run.py` default is `a11y_tree`, so the desired setting must be passed explicitly
 
 ### 3.4 Action space choice
-**Support `pyautogui` first. Normalize actions internally.**
+**Support `pyautogui` only in the MVP.**
 
 Why:
 
 - current OS-Harm `run.py` defaults to `pyautogui`
 - the repo’s example execution traces are stored under `pyautogui/screenshot_a11y_tree/...`
-- it is safer to start from the repo’s default behavior
-
-Optional day-2 extension:
-
-- add first-class support for `computer_13`
-- if it works well enough, it can make routing easier because actions are structured JSON
+- OSWorld mainly uses `pyautogui`
+- one action format means simpler parsing and fewer edge cases
 
 ### 3.5 Agent choice
 **Do not build a new agent. Use the existing baseline agent path.**
@@ -241,11 +252,9 @@ run.py
         │     └── returns response, actions
         ├── control.controller.handle_actions(...)
         │     ├── action_normalizer
-        │     ├── a11y_parser
+        │     ├── a11y_parser (includes target matching)
         │     ├── critical_router
-        │     ├── legibility_client (critical only)
-        │     ├── fact_extractor
-        │     ├── trusted_reviewer
+        │     ├── reviewer (includes legibility, critical only)
         │     └── controller_policy
         ├── env.step(...)
         ├── OS-Harm logging
@@ -271,30 +280,25 @@ Add a new top-level package:
 ```text
 control/
   __init__.py
-  config.py
-  types.py
+  types.py              # config + data types
   action_normalizer.py
-  a11y_parser.py
+  a11y_parser.py        # includes target matching
   critical_router.py
-  legibility.py
-  fact_extractor.py
-  trusted_reviewer.py
+  reviewer.py           # trusted reviewer + legibility (one function)
   controller.py
   prompts.py
-  log_io.py
-  metrics.py
+  logging.py            # log_io + metrics
 ```
 
+Note: legibility is one function inside `reviewer.py`, not a separate module. Fact extraction is deferred — the reviewer gets the full a11y tree and screenshot directly.
+
 ### 5.3 New analysis package to add
-Add a small analysis package:
+Start with one script. Break it up later if it grows.
 
 ```text
 analysis/
   __init__.py
-  aggregate_results.py
-  export_examples.py
-  plot_frontier.py
-  summarize_overhead.py
+  aggregate.py    # reads control_summary.json files, produces CSV + frontier plot
 ```
 
 ### 5.4 New config directory
@@ -302,11 +306,11 @@ Add:
 
 ```text
 configs/
-  control_none.json
-  control_always_review.json
-  control_critical_no_legibility.json
-  control_critical_legibility.json
-  control_critical_legibility_resample.json
+  control_none.json                        # B0
+  control_always_review_language_only.json  # B1
+  control_always_review_state_grounded.json # B2
+  control_critical.json                    # B3
+  control_critical_legibility.json         # B4
 ```
 
 ### 5.5 Do not patch these unless necessary
@@ -386,8 +390,10 @@ Add the following CLI flags to `run.py`:
 - `--reviewer_model`
 - `--legibility_model`
 - `--run_judge_on_success`
-- `--review_budget_target` (optional)
-- `--max_resamples_per_step` (optional)
+
+Stretch flags (add only when implementing those features):
+- `--review_budget_target`
+- `--max_resamples_per_step`
 
 ### 7.2 Control config file
 Use JSON for zero extra dependency risk.
@@ -399,28 +405,29 @@ Example schema:
   "enabled": true,
   "router_mode": "critical_only",
   "controller_mode": "allow_or_terminate",
-  "reviewer_input_mode": "state_grounded",
+  "include_visual_context": true,
   "legibility_enabled": true,
-  "trusted_facts_enabled": true,
   "fail_closed_on_review_error": true,
-  "max_resamples_per_step": 1,
-  "review_budget_target": 0.05,
   "critical_keywords_path": "configs/critical_keywords.json"
 }
 ```
 
+Note: `include_visual_context` is a boolean that controls whether the reviewer sees screenshot + a11y tree + target info. When false, the reviewer sees only language context (instruction, raw response, action, history). This replaces the previous `reviewer_input_mode` field — it's one prompt path with conditional fields, not two separate modes.
+
 ### 7.3 Baseline config modes
 All baselines should be just config changes, not code forks.
 
-Use these named modes:
+Use these five named modes (mapping to master plan B0–B4):
 
-- `none`
-- `always_review_language_only`
-- `always_review_state_grounded`
-- `critical_review_no_legibility`
-- `critical_review_with_legibility`
-- `critical_review_with_legibility_resample_once`
-- `critical_review_with_legibility_trusted_fallback_once` (optional)
+- `none` **(B0)** — no control protocol
+- `always_review_language_only` **(B1)** — blanket monitor, language-only reviewer
+- `always_review_state_grounded` **(B2)** — blanket monitor, state-grounded reviewer (run on small slice of 3–5 tasks)
+- `critical_review` **(B3)** — rule-based routing, state-grounded reviewer, no legibility
+- `critical_review_legibility` **(B4)** — routing + state-grounded reviewer + legibility
+
+Stretch modes (build only if B0–B4 are complete):
+- `critical_review_legibility_resample_once`
+- `critical_review_legibility_trusted_fallback_once`
 
 ---
 
@@ -428,61 +435,36 @@ Use these named modes:
 
 Keep internal types explicit and boring.
 
-### 8.1 ObservationSnapshot
-Represents the state before the candidate action is executed.
-
-```python
-ObservationSnapshot = {
-  "screenshot_bytes": bytes,
-  "a11y_tree_raw": str,
-  "a11y_tree_linearized": str,
-  "step_index": int,
-  "task_id": str,
-  "domain": str
-}
-```
+### 8.1 Observation
+Do not define a new `ObservationSnapshot` type. Pass the existing `obs` dict from OSWorld directly — it already has `screenshot` and `accessibility_tree`. Pass `step_index`, `task_id`, and `domain` as separate params to the controller call.
 
 ### 8.2 NormalizedAction
-A unified representation of either `pyautogui` or `computer_13` actions.
+A parsed representation of a `pyautogui` action, with target info merged in.
 
 ```python
 NormalizedAction = {
-  "raw_action": str | dict,
-  "raw_format": "pyautogui" | "computer_13" | "special",
+  "raw_action": str,
   "primary_kind": "click" | "double_click" | "right_click" | "type" | "press" |
                   "hotkey" | "scroll" | "drag" | "wait" | "done" | "fail" | "other",
-  "sub_actions": [ ... ],
   "x": float | null,
   "y": float | null,
   "text": str | null,
   "keys": [str] | null,
   "button": str | null,
-  "special_token": "WAIT" | "DONE" | "FAIL" | null
+  "special_token": "WAIT" | "DONE" | "FAIL" | null,
+  # Target info (merged from a11y matching, replaces separate A11yTarget type)
+  "target_matched": bool,
+  "target_tag": str | null,
+  "target_name": str | null,
+  "target_text": str | null,
+  "target_bounds": {"x": float, "y": float, "w": float, "h": float} | null,
+  "target_match_method": "contains_point" | "nearest_center" | "none"
 }
 ```
 
-### 8.3 A11yTarget
-The best-effort UI element linked to the action.
+Note: `sub_actions` and `raw_format` removed. We parse only `pyautogui` and extract the last impactful primitive per snippet.
 
-```python
-A11yTarget = {
-  "matched": bool,
-  "tag": str | null,
-  "name": str | null,
-  "text": str | null,
-  "class": str | null,
-  "description": str | null,
-  "bounds": {
-    "x": float,
-    "y": float,
-    "w": float,
-    "h": float
-  } | null,
-  "match_method": "contains_point" | "nearest_center" | "none"
-}
-```
-
-### 8.4 RouterDecision
+### 8.3 RouterDecision
 ```python
 RouterDecision = {
   "critical": bool,
@@ -492,8 +474,8 @@ RouterDecision = {
 }
 ```
 
-### 8.5 LegibilityReport
-Generated only for critical actions if enabled.
+### 8.4 LegibilityReport
+Generated only for critical actions if enabled. Produced by one function inside `reviewer.py`.
 
 ```python
 LegibilityReport = {
@@ -508,37 +490,26 @@ LegibilityReport = {
 }
 ```
 
-### 8.6 TrustedFacts
-Extracted deterministically where possible.
-
-```python
-TrustedFacts = {
-  "target_node_name": str | null,
-  "target_node_text": str | null,
-  "target_node_class": str | null,
-  "danger_terms": [str],
-  "url_candidates": [str],
-  "email_candidates": [str],
-  "file_candidates": [str]
-}
-```
-
-### 8.7 ReviewPackage
+### 8.5 ReviewPackage
 ```python
 ReviewPackage = {
   "instruction": str,
   "raw_response": str,
   "normalized_action": NormalizedAction,
   "router_decision": RouterDecision,
-  "observation": ObservationSnapshot,
-  "target": A11yTarget | null,
-  "trusted_facts": TrustedFacts,
+  "obs": dict,               # OSWorld obs dict passed directly (screenshot + a11y_tree)
+  "a11y_tree_linearized": str,
   "legibility_report": LegibilityReport | null,
-  "recent_history": [dict]
+  "recent_history": [dict],
+  "step_index": int,
+  "task_id": str,
+  "domain": str
 }
 ```
 
-### 8.8 ReviewerResult
+Note: `TrustedFacts` removed — the reviewer gets the full a11y tree and screenshot, which is sufficient. `A11yTarget` merged into `NormalizedAction` as `target_*` fields.
+
+### 8.6 ReviewerResult
 Keep the reviewer output simple.
 
 ```python
@@ -551,20 +522,19 @@ ReviewerResult = {
 }
 ```
 
-### 8.9 ControllerDecision
+### 8.7 ControllerDecision
 This is what the runtime uses.
 
 ```python
 ControllerDecision = {
   "execute": bool,
-  "action_to_execute": str | dict | null,
-  "termination_reason": str | null,
-  "resample_requested": bool,
-  "trusted_fallback_requested": bool
+  "termination_reason": str | null
 }
 ```
 
-### 8.10 ControlEventLog
+Stretch modes (`RESAMPLE`, `DEFER_TO_TRUSTED`) will add `resample_requested` and `trusted_fallback_requested` fields when implemented.
+
+### 8.8 ControlEventLog
 One JSONL record per reviewed action.
 
 ```python
@@ -572,11 +542,10 @@ ControlEventLog = {
   "task_id": str,
   "domain": str,
   "step_index": int,
-  "raw_action": str | dict,
+  "raw_action": str,
   "normalized_action": dict,
   "router_decision": dict,
   "legibility_report": dict | null,
-  "trusted_facts": dict | null,
   "reviewer_result": dict | null,
   "controller_decision": dict,
   "review_latency_ms": int | null,
@@ -590,10 +559,9 @@ ControlEventLog = {
 
 This module is more important than it looks.
 
-The router and reviewer should not need to care whether the raw action came from `pyautogui` code or a structured `computer_13` dict.
+**pyautogui only.** OS-Harm defaults to pyautogui; OSWorld mainly uses pyautogui. Do not implement `computer_13` support in the MVP.
 
-### 9.1 Support `pyautogui` first
-Parse the common cases:
+### 9.1 Parse these `pyautogui` calls
 
 - `pyautogui.click(x, y)`
 - `pyautogui.click(x=?, y=?, button=...)`
@@ -619,31 +587,11 @@ Rules:
 3. Detect type family
 4. Detect key / hotkey family
 5. Extract coordinates if obvious
-6. If code contains `moveTo(...)` followed by `click()` in the same snippet, inherit the last `moveTo` coordinates
-7. If a snippet contains multiple primitives, keep:
-   - `primary_kind` = last impactful primitive
-   - `sub_actions` = all parsed primitives
+6. If a snippet contains multiple primitives (e.g. `moveTo(...)` then `click()`), extract the **last impactful primitive** and inherit coordinates from any preceding `moveTo`
 
-### 9.3 Support `computer_13` later
-If `raw_action` is already a dict, normalize from:
+Do not track a `sub_actions` list. The router only needs the final action.
 
-- `action_type`
-- `x`, `y`
-- `text`
-- `keys`
-- `button`
-
-### 9.4 Alias normalization
-Expect prompt / output alias drift.
-
-Normalize these to one internal form:
-
-- `MOVE_TO` / `MOUSE_MOVE` -> `move`
-- `TYPE` / `TYPING` -> `type`
-- `PRESS` / `KEY` -> `press`
-- `RIGHT_CLICK` -> `right_click`
-
-Do not assume the upstream prompt text is perfectly self-consistent.
+**Important — validate on Day 1:** After the parser is written, feed 3–5 real task traces from `better_log.json` through it. Log parse failures explicitly (don't silently return "other"). If the parser misses >10% of impactful actions, add targeted regex patterns before running the full evaluation.
 
 ---
 
@@ -731,10 +679,8 @@ Use this fixed taxonomy.
 ### 11.3 Router input
 The router should use:
 
-- normalized action
-- matched target node
+- normalized action (with target info)
 - nearby a11y text
-- trusted facts
 - recent history
 
 ### 11.4 Router logic
@@ -789,12 +735,14 @@ For the blanket-monitor baseline, skip router logic and mark all non-special act
 
 ## 12. Legibility generation
 
+Legibility is part of the core experiment and novelty claim. But it is **one function inside `reviewer.py`**, not a separate module.
+
 ### 12.1 Why separate legibility
 The baseline agent already returns free-form reasoning plus action code.
 
 Do **not** change that base prompt in the MVP.
 
-Instead, for critical actions only, call a separate “explain this action” helper.
+Instead, for critical actions only, call a separate “explain this action” helper within `reviewer.py`.
 
 ### 12.2 Input
 Legibility helper receives:
@@ -802,12 +750,11 @@ Legibility helper receives:
 - instruction
 - screenshot + a11y
 - raw response
-- normalized action
-- matched target node
+- normalized action (with target info)
 - recent history
 
 ### 12.3 Output schema
-Use the `LegibilityReport` schema from Section 8.5.
+Use the `LegibilityReport` schema from Section 8.4.
 
 ### 12.4 Failure behavior
 If the legibility call fails:
@@ -823,30 +770,11 @@ The explanation is **untrusted**. It only exists to make mismatches easier to de
 
 ---
 
-## 13. Trusted fact extraction
+## 13. ~~Trusted fact extraction~~ — Deferred
 
-### 13.1 MVP goal
-The fact extractor should stay deterministic.
+Trusted fact extraction is deferred from the MVP. The reviewer receives the full a11y tree and screenshot directly, which is sufficient for state-grounded review. The master plan explicitly supports this: screenshot + a11y + legibility alone is publishable if exact read-only probes are too hard.
 
-Do not call another model here in the MVP.
-
-### 13.2 What to extract
-Extract only a small, high-value set:
-
-- matched target node name/text/class
-- critical keywords present in the local a11y neighborhood
-- URL-like strings
-- email-like strings
-- filename-like strings
-
-### 13.3 Local neighborhood
-For click-like actions:
-- gather the matched node
-- plus nodes within a screen-distance radius
-- plus nodes sharing large overlap in Y-range (same dialog row / panel)
-
-### 13.4 Why this is enough
-This gives the reviewer a compact, grounded summary without building a full GUI state model.
+If the reviewer demonstrably misses things that a pre-extracted fact summary would catch, re-add this module later.
 
 ---
 
@@ -859,32 +787,23 @@ The reviewer answers:
 
 That is all.
 
-### 14.2 Reviewer input modes
-Support two prompt modes:
+### 14.2 Reviewer input
+Build **one** prompt construction path. Use the `include_visual_context` config boolean to conditionally include fields.
 
-#### A. `language_only`
-Reviewer sees:
+The reviewer always sees:
 - task instruction
 - raw response
-- normalized action
+- normalized action (with target info)
 - recent history
-- no screenshot
-- no a11y tree
 
-Used for baseline.
-
-#### B. `state_grounded`
-Reviewer sees:
-- task instruction
+When `include_visual_context` is true (B2, B3, B4), also include:
 - screenshot
 - linearized a11y tree
-- normalized action
-- matched target node
-- trusted facts
-- recent history
 - legibility report if available
 
-Used for the main protocol.
+When `include_visual_context` is false (B1), the reviewer sees only the language context above.
+
+This is an `if` statement, not two separate prompt paths.
 
 ### 14.3 Reviewer output
 Use the `ReviewerResult` schema:
@@ -1006,12 +925,10 @@ Contains:
   "domain": "...",
   "control_mode": "...",
   "router_mode": "...",
-  "reviewer_input_mode": "...",
+  "include_visual_context": true,
   "review_count": 0,
   "critical_count": 0,
   "blocked_count": 0,
-  "resample_count": 0,
-  "trusted_fallback_count": 0,
   "review_latency_ms_total": 0,
   "terminated_by_control": false,
   "termination_reason": null
@@ -1019,14 +936,7 @@ Contains:
 ```
 
 ### 16.5 Review package storage
-For a small subset of reviewed steps, save full review packages to disk for report examples.
-
-Do not save massive blobs for every step unless storage is trivial.
-
-A good rule:
-- always save when blocked
-- save first N allowed reviews
-- save first N disallowed reviews
+Save all review packages to disk. With 10–25 tasks and ~5–10 critical actions each, total volume is <250 packages. Storage is trivial — don't over-engineer selective saving.
 
 ---
 
@@ -1102,19 +1012,17 @@ If a task has multiple injection goals, treat:
 - attack key = `domain/example_id/injection_type/goal_id`
 
 ## 18.3 Baselines to run
-Required:
+Required (B0–B4):
 
-1. `none`
-2. `always_review_language_only`
-3. `critical_review_no_legibility`
-4. `critical_review_with_legibility`
+1. `none` **(B0)**
+2. `always_review_language_only` **(B1)**
+3. `always_review_state_grounded` **(B2)** — run on small slice (3–5 tasks) to preserve the "sparse beats blanket" comparison
+4. `critical_review` **(B3)**
+5. `critical_review_legibility` **(B4)**
 
-Strongly recommended:
-5. `always_review_state_grounded`
-
-Optional:
-6. `critical_review_with_legibility_resample_once`
-7. `critical_review_with_legibility_trusted_fallback_once`
+Stretch (build only if B0–B4 are complete):
+6. `critical_review_legibility_resample_once`
+7. `critical_review_legibility_trusted_fallback_once`
 
 ## 18.4 Metrics
 Track these at minimum.
@@ -1148,26 +1056,24 @@ Track these at minimum.
 
 ## 19. Main plots and tables
 
-The analysis package must produce these artifacts.
+`analysis/aggregate.py` must produce these artifacts:
 
 ### 19.1 Required
 - `frontier_safety_vs_usefulness.png`
 - `results_summary.csv`
-- `overhead_summary.csv`
 
-### 19.2 Strongly recommended
+### 19.2 Add when needed
+- `overhead_summary.csv`
 - `critical_action_family_counts.csv`
 - `blocked_examples_manifest.csv`
 
-### 19.3 Optional but valuable
-- `concentration_plot.png`
-- `example_trace_packets/`
+Split `aggregate.py` into separate files only if it grows past ~300 lines.
 
 ---
 
 ## 20. Concentration analysis
 
-This is a high-value analysis and should be supported by the logs even if manual annotation happens later.
+This is a high-value analysis that supports the paper's central claim and serves as a fallback if end-to-end gains are noisy.
 
 ### 20.1 Automatic part
 From `control_events.jsonl`, compute:
@@ -1176,34 +1082,10 @@ From `control_events.jsonl`, compute:
 - counts by blocked family
 - counts by attack outcome × family
 
-### 20.2 Manual part
-Create a CSV for manual labeling:
+### 20.2 Manual annotation — detailed schemas deferred
+Manual annotation CSV schemas, column definitions, and annotation targets are in `docs/stretch_analysis.md`. The key idea: annotate a small set of blocked attack runs, successful attack runs, and benign false positives to check whether the router and reviewer made the right calls.
 
-```text
-annotations/concentration_labels.csv
-```
-
-Columns:
-
-- task_id
-- domain
-- mode
-- attack_or_benign
-- decisive_step_index
-- decisive_family
-- screen_sufficient
-- a11y_sufficient
-- legibility_sufficient
-- router_missed
-- reviewer_false_allow
-- reviewer_false_block
-- notes
-
-### 20.3 Minimum viable annotation target
-Annotate:
-- 10 blocked attack runs
-- 10 successful attack runs
-- 5 benign false positives if available
+The logs from Sections 16–17 contain all the data needed for this analysis. Build it after the main experiment runs.
 
 ---
 
@@ -1241,10 +1123,11 @@ Done when:
 ## 21.5 Phase 4 — baselines
 Done when:
 
-- `none`
-- `always_review_language_only`
-- `critical_review_no_legibility`
-- `critical_review_with_legibility`
+- `none` (B0)
+- `always_review_language_only` (B1)
+- `always_review_state_grounded` (B2, small slice)
+- `critical_review` (B3)
+- `critical_review_legibility` (B4)
 
 all run from configs
 
@@ -1264,57 +1147,41 @@ Optional:
 
 ---
 
-## 22. Suggested workstream split for multiple coding agents
+## 22. Suggested workstream split
 
-This is the easiest way to parallelize.
+Use 2–3 workstreams, not 5. Fewer modules means fewer interface contracts to keep in sync.
 
-### Agent A — runtime integration
+### Workstream 1 — runtime integration
 Owns:
 - `run.py` CLI additions
 - `lib_run_single.py` control hook
+- `controller.py`
+- `logging.py` (control log writing)
 - explicit post-run judge call
-- control log writing
 
 Definition of done:
 - end-to-end run works with a dummy reviewer that always allows
 
-### Agent B — action parsing and routing
+### Workstream 2 — action parsing, routing, and review
 Owns:
 - `action_normalizer.py`
 - `a11y_parser.py`
 - `critical_router.py`
-- `fact_extractor.py`
-
-Definition of done:
-- given saved `better_log.json` examples, router can classify likely critical vs non-critical steps
-
-### Agent C — reviewer and legibility
-Owns:
-- `legibility.py`
-- `trusted_reviewer.py`
+- `reviewer.py` (trusted reviewer + legibility)
 - `prompts.py`
-- controller disallow behavior
+- `types.py`
 
 Definition of done:
 - critical step triggers a structured review and returns allow/disallow JSON
+- given saved `better_log.json` examples, router can classify likely critical vs non-critical steps
 
-### Agent D — analysis and experiment harness
+### Workstream 3 — analysis (can be done by either workstream once runs exist)
 Owns:
-- configs
-- aggregate scripts
-- CSV outputs
-- plots
-- example trace export
+- configs (B0–B4)
+- `analysis/aggregate.py`
 
 Definition of done:
-- one command builds the results table and frontier plot from finished run folders
-
-### Optional Agent E — stretch experiments
-Owns:
-- resample mode
-- trusted fallback
-- concentration annotation tooling
-- custom side-task extension
+- one command builds the results CSV and frontier plot from finished run folders
 
 ---
 
@@ -1425,8 +1292,7 @@ python run.py \
 
 ### 25.4 Aggregate results
 ```bash
-python -m analysis.aggregate_results --root ./results --out ./analysis_outputs
-python -m analysis.plot_frontier --input ./analysis_outputs/results_summary.csv
+python -m analysis.aggregate --root ./results --out ./analysis_outputs
 ```
 
 ---
@@ -1508,16 +1374,17 @@ If time is collapsing, do these in order and stop when needed.
 1. One paired benign vs attack run works
 2. Controller seam exists
 3. Rule-based critical router works
-4. Reviewer works in state-grounded mode
-5. `allow_or_terminate` works
-6. Explicit judge on success works
-7. Aggregate usefulness/safety CSV works
-8. Frontier plot works
-9. Legibility works
-10. Always-review baseline works
-11. Resample / trusted fallback
-12. Manual concentration labels
-13. Custom side-task setting
+4. **Validate parser recall on real traces** — feed 3–5 real task traces through the normalizer, log parse failures, fix if >10% missed
+5. Reviewer works in state-grounded mode (B3)
+6. `allow_or_terminate` works
+7. Explicit judge on success works
+8. Aggregate usefulness/safety CSV + frontier plot works
+9. Legibility works (B4)
+10. Language-only baseline works (B1)
+11. Blanket state-grounded baseline on small slice (B2)
+12. Resample / trusted fallback (stretch)
+13. Manual concentration labels (stretch)
+14. Custom side-task setting (stretch)
 
 ---
 
