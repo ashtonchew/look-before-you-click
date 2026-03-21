@@ -12,10 +12,16 @@ The protocol layer lives in `control/`. Analysis scripts live in `analysis/`. Co
 
 Do NOT modify: `mm_agents/agent.py`, `desktop_env/*`, OSWorld internals, or judge internals.
 
+Exception: `desktop_env/providers/vmware/provider.py` has a bug fix on our branch (IP validation in `get_ip_address()`). Do not revert it.
+
 ## How to work on this project
 
 - Use `uv` for dependencies (`uv add`, `uv run python`). Never `pip install`.
+- Python 3.12 required (`uv sync --python 3.12`). Python 3.14 breaks torch.
+- VMware path: `export PATH="/Applications/VMware Fusion.app/Contents/Library:$PATH"` before any vmrun or run.py command.
+- API keys: `source /Users/ashtonchew/Desktop/look-before-you-click/.env && export OPENAI_API_KEY` before any run command.
 - Always pass `--observation_type screenshot_a11y_tree` and `--action_space pyautogui` explicitly.
+- VM path: `--path_to_vm vmware_vm_data/Ubuntu0/Ubuntu0.vmx`. The `init_state` snapshot exists.
 - Environment runs on VMware locally. Do not switch providers.
 - Commit after each completed module or integration step.
 - Write status to `notes/<tag>_progress.md` after major steps.
