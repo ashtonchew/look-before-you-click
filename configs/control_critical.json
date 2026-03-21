@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "router_mode": "critical_only",
+  "controller_mode": "allow_or_terminate",
+  "include_visual_context": true,
+  "legibility_enabled": false,
+  "fail_closed_on_review_error": true,
+  "critical_keywords_path": "configs/critical_keywords.json"
+}
