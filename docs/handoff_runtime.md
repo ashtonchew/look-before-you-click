@@ -26,7 +26,7 @@ Keep or add these flags on `run.py`:
 
 ```python
 parser.add_argument("--control_config", type=str, default=None)
-parser.add_argument("--control_mode", type=str, default="allow_or_terminate")
+parser.add_argument("--control_mode", type=str, default=None)
 parser.add_argument("--reviewer_model", type=str, default=None)
 parser.add_argument("--legibility_model", type=str, default=None)
 parser.add_argument("--trusted_fallback_model", type=str, default=None)
@@ -39,7 +39,9 @@ Do **not** rely on `--run_judge_on_success` in the new handoff. It is legacy / m
 
 ### Control config loading
 - If `--control_config` is `None`, control is disabled.
-- If `--control_mode` is supplied, it overrides the JSON file.
+- `--control_mode` defaults to `None` at the CLI.
+- If `--control_mode` is explicitly supplied, it overrides the JSON file.
+- If `--control_mode` is `None`, preserve the JSON `controller_mode`.
 - `trusted_fallback_model` defaults to `reviewer_model` if unset.
 
 ---

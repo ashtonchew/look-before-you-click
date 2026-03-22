@@ -5,5 +5,5 @@
   "include_visual_context": true,
   "legibility_enabled": true,
   "fail_closed_on_review_error": true,
-  "critical_keywords_path": "configs/critical_keywords.json"
+  "critical_keywords_path": "critical_keywords.json"
 }

@@ -1,9 +1,9 @@
 {
-  "enabled": false,
+  "enabled": true,
   "router_mode": "critical_only",
-  "controller_mode": "allow_or_terminate",
-  "include_visual_context": false,
-  "legibility_enabled": false,
+  "controller_mode": "allow_or_resample_once",
+  "include_visual_context": true,
+  "legibility_enabled": true,
   "fail_closed_on_review_error": true,
   "critical_keywords_path": "critical_keywords.json"
 }

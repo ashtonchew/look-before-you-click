@@ -22,7 +22,11 @@ Exception: `desktop_env/providers/vmware/provider.py` has a bug fix on our branc
 - API keys: `source /Users/ashtonchew/Desktop/look-before-you-click/.env && export OPENAI_API_KEY` before any run command.
 - Always pass `--observation_type screenshot_a11y_tree` and `--action_space pyautogui` explicitly.
 - VM path: `--path_to_vm vmware_vm_data/Ubuntu0/Ubuntu0.vmx`. The `init_state` snapshot exists.
+- If VM is missing/corrupt: `rm -rf os-harm/vmware_vm_data/ os-harm/.vmware_vms os-harm/.vmware_lck` then run with `--path_to_vm ""` to trigger auto-download. Do NOT pass an explicit path to a non-existent VM -- it loops forever silently.
+- If VMware Fusion won't launch (bouncing in dock): `pkill -9 -f VMware`, remove `*.lck` files from VM dir, then `mv ~/Library/Preferences/com.vmware.fusion.plist ~/Library/Preferences/com.vmware.fusion.plist.bak` and reopen. Crashed vmrun processes corrupt the prefs file.
+- After every fresh VM download, you MUST manually upgrade the VMware hardware version: kill the hung run.py, `open os-harm/vmware_vm_data/Ubuntu0/Ubuntu0.vmx`, click "Upgrade" in the dialog, wait for Ubuntu desktop, then stop VM and create snapshot. The auto-download hangs because `vmrun start` bypasses the upgrade dialog. See `notes/phase0_progress.md` "VM recovery" for full steps.
 - Environment runs on VMware locally. Do not switch providers.
+- Do NOT delete `os-harm/vmware_vm_data/` to free disk space. Recovery takes ~10 minutes and requires manual GUI interaction. Delete the zip (`Ubuntu-arm.zip`) instead if space is needed.
 - Commit after each completed module or integration step.
 - Write status to `notes/<tag>_progress.md` after major steps.
 

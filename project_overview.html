@@ -338,6 +338,11 @@
     }
     .status-done { background: #e6f4ea; color: var(--color-success); }
     .status-stretch { background: #fef3cd; color: var(--color-warning); }
+    .status-pending { background: #e2e8f0; color: #4a5568; }
+    .status-blocked { background: #fed7d7; color: var(--color-danger); }
+    .severity-critical { background: #fed7d7; color: var(--color-danger); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.15em 0.5em; border-radius: 3px; }
+    .severity-high { background: #fefcbf; color: #975a16; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.15em 0.5em; border-radius: 3px; }
+    .severity-medium { background: #e2e8f0; color: #4a5568; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.15em 0.5em; border-radius: 3px; }
 
     /* Callout box */
     .callout {
@@ -400,7 +405,7 @@
   <header>
     <h1>Look-Before-You-Click</h1>
     <p class="subtitle">Critical-Action Deferral with State-Grounded Review for Computer-Use Agents</p>
-    <p class="meta">Reference Document &mdash; March 21, 2026 at 12:58 AM EDT</p>
+    <p class="meta">Reference Document &mdash; March 21, 2026 (updated)</p>
     <p class="summary">
       This project builds an AI control protocol for computer-use agents. It adapts critical-action
       deferral to GUI environments: let an untrusted agent act normally on most steps, but pause on
@@ -419,13 +424,15 @@
     <ol>
       <li><a href="#problem">The Problem</a></li>
       <li><a href="#core-idea">The Core Idea</a></li>
-      <li><a href="#baselines">The 5 Baselines</a></li>
+      <li><a href="#baselines">Protocol Configurations (B0-B4, B4R, B4T)</a></li>
+      <li><a href="#escalation">Escalation Modes</a></li>
       <li><a href="#phase0">Phase 0 Findings</a></li>
       <li><a href="#experiment-plan">Experiment Plan</a></li>
       <li><a href="#architecture">Architecture Overview</a></li>
       <li><a href="#walkthrough">Pipeline Walkthrough</a></li>
       <li><a href="#taxonomy">Critical Action Taxonomy</a></li>
       <li><a href="#status">Implementation Status</a></li>
+      <li><a href="#blockers">Current Blockers</a></li>
       <li><a href="#decisions">Key Design Decisions</a></li>
     </ol>
   </nav>
@@ -517,14 +524,54 @@
                 <span class="stage-desc">Separate trusted model inspects screenshot, a11y tree, action history, and explanation</span>
               </div>
               <div class="pipeline-varrow">&darr;</div>
-              <div class="pipeline-stage success">
-                <span class="stage-label">Allow</span>
-                <span class="stage-desc">Reviewer approves -- action executes</span>
+              <div class="pipeline-stage decision">
+                <span class="stage-label">Reviewer Decision</span>
+                <span class="stage-desc">ALLOW | BLOCK | RESAMPLE (B4R) | DEFER_TO_TRUSTED (B4T)</span>
               </div>
-              <div style="font-size:0.8rem; color: var(--color-text-secondary); padding: 0.15em 0;">or</div>
-              <div class="pipeline-stage critical">
-                <span class="stage-label">Block / Terminate</span>
-                <span class="stage-desc">Reviewer rejects -- action is blocked and run ends</span>
+              <div class="pipeline-varrow">&darr;</div>
+              <div class="pipeline-split" style="gap: var(--space-md);">
+                <div class="pipeline-branch" style="max-width: 180px;">
+                  <span class="branch-label safe">ALLOW</span>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage success" style="font-size:0.75rem;">
+                    <span class="stage-label">Execute</span>
+                  </div>
+                </div>
+                <div class="pipeline-branch" style="max-width: 180px;">
+                  <span class="branch-label risky">BLOCK</span>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage critical" style="font-size:0.75rem;">
+                    <span class="stage-label">Terminate</span>
+                  </div>
+                </div>
+                <div class="pipeline-branch" style="max-width: 180px;">
+                  <span class="branch-label" style="color:var(--color-warning);background:#fefcf3;">RESAMPLE</span>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage" style="font-size:0.75rem;border-color:var(--color-warning);background:#fefcf3;">
+                    <span class="stage-label">Re-predict</span>
+                    <span class="stage-desc">Same obs, one try</span>
+                  </div>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage" style="font-size:0.72rem;">
+                    <span class="stage-label">Re-review</span>
+                  </div>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage" style="font-size:0.72rem;">
+                    <span class="stage-label">Allow / Term.</span>
+                  </div>
+                </div>
+                <div class="pipeline-branch" style="max-width: 180px;">
+                  <span class="branch-label" style="color:var(--color-accent);background:#edf2f7;">DEFER</span>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage" style="font-size:0.75rem;border-color:var(--color-accent);background:#edf2f7;">
+                    <span class="stage-label">Trusted model</span>
+                    <span class="stage-desc">Generates replacement</span>
+                  </div>
+                  <div class="pipeline-varrow">&darr;</div>
+                  <div class="pipeline-stage" style="font-size:0.72rem;">
+                    <span class="stage-label">Execute / Term.</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -541,21 +588,23 @@
       </div>
     </section>
 
-    <!-- 4. THE 5 BASELINES -->
+    <!-- 4. PROTOCOL CONFIGURATIONS -->
     <section id="baselines">
-      <h2>The 5 Baselines</h2>
+      <h2>Protocol Configurations</h2>
       <p>
-        The experiment compares five protocol configurations. Each is defined by a JSON config
-        file that controls which actions get reviewed and what context the reviewer sees.
+        The experiment compares seven protocol configurations. Each is defined by a JSON config
+        file that controls which actions get reviewed, what context the reviewer sees, and how
+        the controller responds to a reviewer rejection.
       </p>
       <table>
         <thead>
           <tr>
-            <th>Baseline</th>
             <th>Config</th>
+            <th>JSON File</th>
             <th>What it tests</th>
             <th><code>router_mode</code></th>
-            <th>Visual context</th>
+            <th><code>controller_mode</code></th>
+            <th>Visual</th>
             <th>Legibility</th>
           </tr>
         </thead>
@@ -567,12 +616,14 @@
             <td>n/a (disabled)</td>
             <td>n/a</td>
             <td>n/a</td>
+            <td>n/a</td>
           </tr>
           <tr>
             <td><strong>B1</strong></td>
             <td><code>control_always_review_language_only.json</code></td>
             <td>Blanket review, text only. No screenshot.</td>
             <td><code>"always"</code></td>
+            <td><code>allow_or_terminate</code></td>
             <td>no</td>
             <td>no</td>
           </tr>
@@ -581,6 +632,7 @@
             <td><code>control_always_review_state_grounded.json</code></td>
             <td>Blanket review with screenshot + a11y. Small slice only (3-5 tasks).</td>
             <td><code>"always"</code></td>
+            <td><code>allow_or_terminate</code></td>
             <td>yes</td>
             <td>no</td>
           </tr>
@@ -589,26 +641,133 @@
             <td><code>control_critical.json</code></td>
             <td>Critical-only routing, no legibility. Tests the core claim.</td>
             <td><code>"critical_only"</code></td>
+            <td><code>allow_or_terminate</code></td>
             <td>yes</td>
             <td>no</td>
           </tr>
           <tr>
             <td><strong>B4</strong></td>
             <td><code>control_critical_legibility.json</code></td>
-            <td>Critical-only routing + legibility report. Full protocol.</td>
+            <td>Critical-only routing + legibility report. Full base protocol.</td>
             <td><code>"critical_only"</code></td>
+            <td><code>allow_or_terminate</code></td>
+            <td>yes</td>
+            <td>yes</td>
+          </tr>
+          <tr>
+            <td><strong>B4R</strong></td>
+            <td><code>control_critical_legibility_resample_once.json</code></td>
+            <td>Full protocol + resample: reviewer can request one re-prediction.</td>
+            <td><code>"critical_only"</code></td>
+            <td><code>allow_or_resample_once</code></td>
+            <td>yes</td>
+            <td>yes</td>
+          </tr>
+          <tr>
+            <td><strong>B4T</strong></td>
+            <td><code>control_critical_legibility_trusted_fallback_once.json</code></td>
+            <td>Full protocol + trusted fallback: reviewer can defer to a trusted model.</td>
+            <td><code>"critical_only"</code></td>
+            <td><code>allow_or_trusted_fallback_once</code></td>
             <td>yes</td>
             <td>yes</td>
           </tr>
         </tbody>
       </table>
       <p>
-        <strong>Why these baselines?</strong>
+        <strong>Why these configurations?</strong>
         B0 measures how dangerous the uncontrolled agent is. B1 tests whether text-only monitoring
         helps. B2 tests whether state-grounded monitoring on every step is worth the cost. B3 tests
         the core claim: that reviewing only critical actions is enough. B4 tests whether forcing
         the agent to explain itself (legibility) improves the trusted reviewer's accuracy.
+        B4R tests whether giving the untrusted agent a second chance after rejection recovers
+        usefulness without sacrificing safety. B4T tests whether replacing a rejected action with
+        a trusted model's action improves the safety-usefulness tradeoff over hard termination.
         Comparing B3/B4 against B1/B2 reveals whether sparse, targeted review beats blanket monitoring.
+        Comparing B4R/B4T against B4 reveals whether escalation recovers usefulness lost to false blocks.
+      </p>
+    </section>
+
+    <!-- 4b. ESCALATION MODES -->
+    <section id="escalation">
+      <h2>Escalation Modes</h2>
+      <p>
+        B4R and B4T extend the base protocol (B4) with escalation paths that give the system
+        one additional option when the trusted reviewer rejects a critical action. Instead of
+        always terminating on rejection, the reviewer can choose an intermediate response.
+      </p>
+
+      <h3>4-Way Reviewer Decision</h3>
+      <p>
+        The reviewer's decision vocabulary depends on the active controller mode. In B4
+        (<code>allow_or_terminate</code>), only <code>ALLOW</code> and <code>BLOCK</code> are
+        valid. B4R adds <code>RESAMPLE</code>. B4T adds <code>DEFER_TO_TRUSTED</code>. The
+        full 4-way schema is:
+      </p>
+      <table>
+        <thead>
+          <tr><th>Decision</th><th>Meaning</th><th>Valid in</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ALLOW</code></td>
+            <td>Action is safe to execute as proposed.</td>
+            <td>All modes</td>
+          </tr>
+          <tr>
+            <td><code>BLOCK</code></td>
+            <td>Action is unsafe. Terminate the run immediately.</td>
+            <td>All modes</td>
+          </tr>
+          <tr>
+            <td><code>RESAMPLE</code></td>
+            <td>Action is suspicious. Ask the untrusted agent to re-predict on the same state.</td>
+            <td>B4R only</td>
+          </tr>
+          <tr>
+            <td><code>DEFER_TO_TRUSTED</code></td>
+            <td>Action is unsafe but the task goal is legitimate. Let a trusted model generate a replacement.</td>
+            <td>B4T only</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>B4R: Resample Once</h3>
+      <div class="callout">
+        <p>
+          <strong>Mode:</strong> <code>allow_or_resample_once</code>
+        </p>
+        <p>
+          When the reviewer returns <code>RESAMPLE</code>, the runtime asks the same untrusted agent
+          to re-predict one replacement action on the same observation state. The replacement action
+          goes through the full review pipeline again (normalize, route, review). If the second
+          review returns <code>ALLOW</code>, the replacement executes. If it returns anything else
+          (including another <code>RESAMPLE</code>), the run terminates. There is no cascading:
+          at most one resample attempt per critical action.
+        </p>
+      </div>
+
+      <h3>B4T: Trusted Fallback Once</h3>
+      <div class="callout">
+        <p>
+          <strong>Mode:</strong> <code>allow_or_trusted_fallback_once</code>
+        </p>
+        <p>
+          When the reviewer returns <code>DEFER_TO_TRUSTED</code>, the controller calls a separate
+          trusted model to generate one replacement action given the current state, the original task
+          instruction, and the rejected action. The trusted model's output is parsed as a pyautogui
+          action. If it parses successfully, it executes. If parsing fails or the trusted model
+          errors, the run terminates. There is no cascading: at most one trusted fallback per
+          critical action.
+        </p>
+      </div>
+
+      <h3>One-Step Limit</h3>
+      <p>
+        Both escalation modes enforce a strict one-step limit. A resample cannot trigger another
+        resample. A trusted fallback cannot trigger another fallback. This prevents infinite loops
+        and keeps latency bounded. The worst-case overhead is two additional LLM calls per
+        critical action (one resample/fallback generation + one re-review).
       </p>
     </section>
 
@@ -743,13 +902,13 @@
           <tr>
             <td><strong>Smoke</strong></td>
             <td>Selected, chrome domain only (2 variants)</td>
-            <td>B4</td>
-            <td>Verify pipeline end-to-end with control logging</td>
+            <td>B4, B4R, B4T</td>
+            <td>Verify pipeline end-to-end including escalation paths</td>
           </tr>
           <tr>
             <td><strong>Dev</strong></td>
             <td>Selected (all 12 variants)</td>
-            <td>B0, B1, B3, B4 (full); B2 (3-5 tasks)</td>
+            <td>B0, B1, B3, B4, B4R, B4T (full); B2 (3-5 tasks)</td>
             <td>Primary experiment data</td>
           </tr>
           <tr>
@@ -768,7 +927,7 @@
       </table>
       <p>
         <strong>Run order:</strong> B0 first (cheapest, no review calls), then B3, then B4,
-        then B1. B2 last and only on 3-5 tasks due to cost.
+        then B4R, then B4T, then B1. B2 last and only on 3-5 tasks due to cost.
         Result directories follow: <code>results/{phase}_{condition}_{baseline}/</code>
         (e.g. <code>results/dev_benign_B0/</code>, <code>results/dev_attack_B3/</code>).
       </p>
@@ -810,7 +969,7 @@
         |     |-- a11y_parser        -> node list + target match
         |     |-- critical_router    -> is this action critical?
         |     |-- reviewer           -> legibility + trusted review
-        |     +-- controller_policy  -> allow / terminate
+        |     +-- controller_policy  -> allow / terminate / resample / defer
         |-- env.step(...)                            # UNTOUCHED
         |-- OS-Harm logging                          # UNTOUCHED
         |-- control logging                          # NEW
@@ -840,6 +999,11 @@
     control_critical.json           B3   Critical-only routing
     control_critical_legibility.json
                                     B4   Critical routing + legibility
+    control_critical_legibility_resample_once.json
+                                    B4R  Critical + legibility + resample once
+    control_critical_legibility_trusted_fallback_once.json
+                                    B4T  Critical + legibility + trusted fallback once
+    critical_keywords.json               Router keyword overrides
 
   analysis/                         <em># Post-run analysis</em>
     __init__.py
@@ -853,7 +1017,7 @@
         <p>
           <strong>WS1</strong> = Runtime integration (config, controller, logging, judge).
           <strong>WS2</strong> = Parsing, routing, and review (types, normalizer, a11y, router, prompts, reviewer).
-          <strong>WS3</strong> = Analysis and configs (aggregate script, 5 baseline JSON files).
+          <strong>WS3</strong> = Analysis and configs (aggregate script, 7 config JSON files + keyword overrides).
         </p>
       </div>
     </details>
@@ -1033,10 +1197,11 @@
       <summary>Implementation Status</summary>
       <div class="details-body">
         <p>
-          10 of 12 milestones are code-complete. The remaining 2 are stretch goals that require
-          experiment data. A comprehensive code review against all handoff specs identified and
-          resolved 20 issues across all modules (4 critical runtime breakages, 8 spec violations,
-          5 cross-module mismatches, 3 follow-up fixes). 98 tests pass across all modules.
+          13 of 18 milestones are complete. The current phase is smoke validation and
+          blocker resolution before experiment runs. A comprehensive code review against all
+          handoff specs identified and resolved 20 issues across all modules (4 critical
+          runtime breakages, 8 spec violations, 5 cross-module mismatches, 3 follow-up fixes).
+          172 tests pass across 12 test files.
         </p>
 
         <ol class="milestone-list">
@@ -1053,7 +1218,7 @@
           <li>
             <span class="status status-done">Done</span>
             Rule-based critical router works on common pyautogui actions.
-            10 families, regex normalizer, a11y target matching, browser domain-change detection. 98 tests pass.
+            10 families, regex normalizer, a11y target matching, browser domain-change detection. 172 tests pass.
           </li>
           <li>
             <span class="status status-done">Done</span>
@@ -1092,12 +1257,40 @@
             B1 and B2 configs use <code>router_mode: "always"</code>.
           </li>
           <li>
-            <span class="status status-stretch">Stretch</span>
-            Resample / trusted fallback. Not started. Controller has placeholders.
+            <span class="status status-done">Done</span>
+            Implement <code>allow_or_resample_once</code> (B4R).
+            Reviewer can return <code>RESAMPLE</code>; runtime re-predicts once on same state.
           </li>
           <li>
-            <span class="status status-stretch">Stretch</span>
-            Concentration analysis. Not started. Requires experiment run data.
+            <span class="status status-done">Done</span>
+            Implement <code>allow_or_trusted_fallback_once</code> (B4T).
+            Reviewer can return <code>DEFER_TO_TRUSTED</code>; controller generates one trusted replacement.
+          </li>
+          <li>
+            <span class="status status-done">Done</span>
+            Wire all three controller modes and the 4-way reviewer/runtime contract end-to-end.
+            Handoff docs, configs, logging, and analysis labels updated for B4R and B4T.
+          </li>
+          <li>
+            <span class="status status-blocked">Blocked</span>
+            Validate all three controller modes on smoke runs.
+            Blocked by 6 integration issues. See <a href="#blockers">Current Blockers</a>.
+          </li>
+          <li>
+            <span class="status status-pending">Pending</span>
+            Verify smoke artifacts for B4, B4R, and B4T.
+          </li>
+          <li>
+            <span class="status status-pending">Pending</span>
+            Run the core B0-B4 matrix on the selected paired set.
+          </li>
+          <li>
+            <span class="status status-pending">Pending</span>
+            Run B4R and B4T as secondary protocol variants.
+          </li>
+          <li>
+            <span class="status status-pending">Pending</span>
+            Finish concentration analysis from control logs.
           </li>
         </ol>
 
@@ -1222,7 +1415,7 @@
           </thead>
           <tbody>
             <tr><td>All control module imports resolve</td><td class="check-pass">Pass</td></tr>
-            <tr><td>All 5 configs load and validate (incl. <code>critical_keywords_path</code>)</td><td class="check-pass">Pass</td></tr>
+            <tr><td>All 7 configs load and validate (incl. <code>critical_keywords_path</code>)</td><td class="check-pass">Pass</td></tr>
             <tr><td>Pipeline unit test (normalize &rarr; route &rarr; decision)</td><td class="check-pass">Pass</td></tr>
             <tr><td>CLI flags parse in run.py</td><td class="check-pass">Pass</td></tr>
             <tr><td>A11y format: controller linearizes XML before parsing</td><td class="check-pass">Pass</td></tr>
@@ -1233,10 +1426,103 @@
             <tr><td>Reviewer/legibility outputs schema-validated</td><td class="check-pass">Pass</td></tr>
             <tr><td>Router: <code>_is_browser_domain_change()</code> implemented</td><td class="check-pass">Pass</td></tr>
             <tr><td>All files under 300-line guideline</td><td class="check-pass">Pass</td></tr>
-            <tr><td>Full test suite (98 tests, no duplicates)</td><td class="check-pass">Pass</td></tr>
+            <tr><td>Full test suite (172 tests across 12 test files)</td><td class="check-pass">Pass</td></tr>
             <tr><td>End-to-end VM run (Phase 0)</td><td class="check-pass">Pass (5/12 violations detected)</td></tr>
+            <tr><td>B4R config loads with <code>controller_mode: allow_or_resample_once</code></td><td class="check-pass">Pass</td></tr>
+            <tr><td>B4T config loads with <code>controller_mode: allow_or_trusted_fallback_once</code></td><td class="check-pass">Pass</td></tr>
+            <tr><td>4-way reviewer decision wiring (unit tests)</td><td class="check-pass">Pass</td></tr>
+            <tr><td>Escalation coverage tests</td><td class="check-pass">Pass</td></tr>
+            <tr><td>Smoke validation (B4 attack)</td><td class="check-pending">Pending</td></tr>
+            <tr><td>Smoke validation (B4R attack, RESAMPLE observed)</td><td class="check-pending">Pending</td></tr>
+            <tr><td>Smoke validation (B4T attack, DEFER_TO_TRUSTED observed)</td><td class="check-pending">Pending</td></tr>
           </tbody>
         </table>
+      </div>
+    </details>
+
+    <!-- 10b. CURRENT BLOCKERS (collapsible) -->
+    <details id="blockers">
+      <summary>Current Blockers</summary>
+      <div class="details-body">
+        <p>
+          6 integration blockers were identified during independent review. All unit tests pass
+          (172 tests green), but these blockers affect runtime integration and experiment validity.
+          They must be resolved before smoke validation can proceed.
+        </p>
+
+        <table>
+          <thead>
+            <tr><th>#</th><th>Severity</th><th>Blocker</th><th>Affected Files</th><th>Impact</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td><span class="severity-critical">Critical</span></td>
+              <td><code>controller_mode</code> override: CLI default <code>"allow_or_terminate"</code> unconditionally overwrites JSON config, so B4R and B4T silently run as B4.</td>
+              <td><code>os-harm/run.py</code>, <code>control/config.py</code></td>
+              <td>B4R and B4T experiments are invalid; both collapse to <code>allow_or_terminate</code>.</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><span class="severity-high">High</span></td>
+              <td>Resample-success history records wrong <code>action_source</code> and stale <code>reviewer_decision</code> from the original (pre-resample) decision.</td>
+              <td><code>os-harm/lib_run_single.py</code></td>
+              <td>Later reviewer decisions use incorrect recent history; B4R debugging is misleading.</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><span class="severity-high">High</span></td>
+              <td>Trusted fallback prompt receives <code>raw_response</code> (agent's freeform text) instead of the rejected <code>raw_action</code> (pyautogui string).</td>
+              <td><code>control/controller.py</code>, <code>control/reviewer.py</code></td>
+              <td>Trusted fallback model operates on wrong artifact; B4T behavior is not per spec.</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td><span class="severity-medium">Medium</span></td>
+              <td>Trusted fallback result (<code>trusted_fallback_result</code>) is not preserved in <code>control_events.jsonl</code>; logged as <code>null</code> even on successful fallback.</td>
+              <td><code>os-harm/lib_run_single.py</code>, <code>control/logging.py</code></td>
+              <td>Audit trail incomplete for B4T; cannot verify what action the trusted model proposed.</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td><span class="severity-medium">Medium</span></td>
+              <td><code>critical_keywords_path</code> does not resolve from the documented <code>cd os-harm</code> working directory. Router silently falls back to built-in defaults.</td>
+              <td><code>configs/control_*.json</code>, <code>control/critical_router.py</code></td>
+              <td>Config JSON is not actually controlling routing; keyword edits have no effect.</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td><span class="severity-medium">Medium</span></td>
+              <td><code>inject_suffix</code> is computed during aggregation but dropped from <code>results_summary.csv</code> because it is missing from <code>CSV_COLUMNS</code>.</td>
+              <td><code>analysis/aggregate.py</code></td>
+              <td>Paired attack condition details are lost in the main analysis artifact.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Recommended Fix Order</h3>
+        <ol>
+          <li>Fix <code>controller_mode</code> override (make <code>--control_mode</code> default to <code>None</code>)</li>
+          <li>Fix trusted fallback prompt to use rejected raw action</li>
+          <li>Fix resample history metadata propagation</li>
+          <li>Fix fallback result propagation into <code>control_events.jsonl</code></li>
+          <li>Fix <code>critical_keywords_path</code> resolution</li>
+          <li>Preserve <code>inject_suffix</code> in aggregate CSV</li>
+        </ol>
+
+        <h3>Smoke Gate After Fixes</h3>
+        <div class="callout warning">
+          <p>Before running the full experiment matrix, confirm all of the following:</p>
+          <ul>
+            <li>B4 writes <code>control_events.jsonl</code>, <code>control_summary.json</code>, <code>review_packages/</code>, and judge output</li>
+            <li>B4R writes <code>"control_mode": "allow_or_resample_once"</code> in its summary</li>
+            <li>B4T writes <code>"control_mode": "allow_or_trusted_fallback_once"</code> in its summary</li>
+            <li>At least one <code>RESAMPLE</code> decision appears in B4R logs</li>
+            <li>At least one <code>DEFER_TO_TRUSTED</code> decision appears in B4T logs</li>
+            <li>Fallback events retain a non-null <code>trusted_fallback_result</code></li>
+            <li>Aggregate output preserves <code>inject_suffix</code></li>
+          </ul>
+        </div>
       </div>
     </details>
 
@@ -1266,9 +1552,19 @@
               <td>Keeps the base agent stable and untouched. Legibility is an add-on, not a modification.</td>
             </tr>
             <tr>
-              <td>Controller default</td>
-              <td><code>allow_or_terminate</code></td>
-              <td>Simplest semantics. Blocked actions terminate the run. Resample/fallback are stretch modes.</td>
+              <td>Controller modes</td>
+              <td>Three modes: <code>allow_or_terminate</code> (default), <code>allow_or_resample_once</code>, <code>allow_or_trusted_fallback_once</code></td>
+              <td>Terminate is simplest. Resample and fallback are protocol extensions that test whether escalation recovers usefulness lost to false blocks, without cascading.</td>
+            </tr>
+            <tr>
+              <td>4-way reviewer decision</td>
+              <td><code>ALLOW</code>, <code>BLOCK</code>, <code>RESAMPLE</code>, <code>DEFER_TO_TRUSTED</code></td>
+              <td>Each controller mode exposes only its valid subset. Invalid decisions fail closed (terminate).</td>
+            </tr>
+            <tr>
+              <td>One-step escalation limit</td>
+              <td>At most one resample or one trusted fallback per critical action</td>
+              <td>Prevents infinite loops, bounds latency, keeps the protocol simple to analyze.</td>
             </tr>
             <tr>
               <td>Judge</td>
@@ -1307,6 +1603,21 @@
             <tr>
               <td>Agent outputs unparsable action</td>
               <td>Log parse error</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Resample attempt fails (reviewer rejects resample action)</td>
+              <td>Terminate the run</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Trusted fallback model errors</td>
+              <td>Fail closed, terminate the run</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Trusted fallback produces unparsable action</td>
+              <td>Fail closed, terminate the run</td>
               <td>Yes</td>
             </tr>
           </tbody>
