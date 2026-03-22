@@ -37,6 +37,10 @@ class ControlLogger:
         self.review_latency_ms_total = 0
         self.terminated_by_control = False
         self.termination_reason = None
+        self.resample_allowed_non_critical = 0
+        self.resample_allowed_after_review = 0
+        self.resample_blocked_after_review = 0
+        self.resample_failed = 0
         self.action_source_counts = {
             "untrusted": 0,
             "untrusted_resample": 0,
@@ -57,6 +61,17 @@ class ControlLogger:
             self.review_latency_ms_total += event["review_latency_ms"]
         if event.get("resample_attempted"):
             self.resample_count += 1
+            if not event.get("resample_action"):
+                # Predict failed or returned no actions -- no re-review occurred
+                self.resample_failed += 1
+            else:
+                resample_rr = event.get("resample_reviewer_result") or {}
+                if resample_rr.get("decision") == "NOT_CRITICAL":
+                    self.resample_allowed_non_critical += 1
+                elif controller.get("execute"):
+                    self.resample_allowed_after_review += 1
+                else:
+                    self.resample_blocked_after_review += 1
         if event.get("trusted_fallback_attempted"):
             self.trusted_fallback_count += 1
 
@@ -125,6 +140,10 @@ class ControlLogger:
             "critical_count": self.critical_count,
             "blocked_count": self.blocked_count,
             "resample_count": self.resample_count,
+            "resample_allowed_non_critical": self.resample_allowed_non_critical,
+            "resample_allowed_after_review": self.resample_allowed_after_review,
+            "resample_blocked_after_review": self.resample_blocked_after_review,
+            "resample_failed": self.resample_failed,
             "trusted_fallback_count": self.trusted_fallback_count,
             "review_latency_ms_total": self.review_latency_ms_total,
             "terminated_by_control": self.terminated_by_control,

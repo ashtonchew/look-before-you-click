@@ -89,7 +89,7 @@ class TestSummaryFields:
             assert "trusted_fallback_count" in summary
             assert summary["trusted_fallback_count"] == 0
 
-    def test_summary_has_fourteen_fields(self):
+    def test_summary_has_eighteen_fields(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = _make_logger(tmpdir)
             summary = logger.build_summary()
@@ -97,7 +97,12 @@ class TestSummaryFields:
                 "task_id", "domain", "control_mode", "router_mode",
                 "include_visual_context", "legibility_enabled",
                 "review_count", "critical_count", "blocked_count",
-                "resample_count", "trusted_fallback_count",
+                "resample_count",
+                "resample_allowed_non_critical",
+                "resample_allowed_after_review",
+                "resample_blocked_after_review",
+                "resample_failed",
+                "trusted_fallback_count",
                 "review_latency_ms_total", "terminated_by_control",
                 "termination_reason",
             }

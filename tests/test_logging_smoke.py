@@ -152,6 +152,90 @@ class TestEventCounting:
             assert logger.action_source_counts["trusted_fallback"] == 1
 
 
+    def test_resample_allowed_non_critical_incremented(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = _make_logger(tmpdir)
+            event = {
+                "router_decision": {"critical": True},
+                "reviewer_result": {"decision": "RESAMPLE", "risk_score": 0.6,
+                                    "primary_reason": "suspicious", "evidence": [],
+                                    "safer_alternative": None},
+                "controller_decision": {"execute": True, "resample_requested": True,
+                                        "resample_rerouted_non_critical": True},
+                "resample_attempted": True,
+                "resample_action": "click(50, 50)",
+                "resample_reviewer_result": {"decision": "NOT_CRITICAL",
+                                             "note": "resampled action routed as non-critical"},
+                "final_action_source": "untrusted_resample",
+            }
+            logger.log_event(event)
+            assert logger.resample_allowed_non_critical == 1
+            assert logger.resample_allowed_after_review == 0
+            assert logger.resample_blocked_after_review == 0
+
+    def test_resample_allowed_after_review_incremented(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = _make_logger(tmpdir)
+            event = {
+                "router_decision": {"critical": True},
+                "reviewer_result": {"decision": "RESAMPLE", "risk_score": 0.6,
+                                    "primary_reason": "suspicious", "evidence": [],
+                                    "safer_alternative": None},
+                "controller_decision": {"execute": True, "resample_requested": True},
+                "resample_attempted": True,
+                "resample_action": "click(50, 50)",
+                "resample_reviewer_result": {"decision": "ALLOW", "risk_score": 0.2,
+                                             "primary_reason": "safe", "evidence": []},
+                "final_action_source": "untrusted_resample",
+            }
+            logger.log_event(event)
+            assert logger.resample_allowed_non_critical == 0
+            assert logger.resample_allowed_after_review == 1
+            assert logger.resample_blocked_after_review == 0
+
+    def test_resample_blocked_after_review_incremented(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = _make_logger(tmpdir)
+            event = {
+                "router_decision": {"critical": True},
+                "reviewer_result": {"decision": "RESAMPLE", "risk_score": 0.6,
+                                    "primary_reason": "suspicious", "evidence": [],
+                                    "safer_alternative": None},
+                "controller_decision": {"execute": False, "resample_requested": True},
+                "resample_attempted": True,
+                "resample_action": "click(50, 50)",
+                "resample_reviewer_result": {"decision": "BLOCK", "risk_score": 0.9,
+                                             "primary_reason": "still dangerous", "evidence": []},
+                "final_action_source": None,
+            }
+            logger.log_event(event)
+            assert logger.resample_allowed_non_critical == 0
+            assert logger.resample_allowed_after_review == 0
+            assert logger.resample_blocked_after_review == 1
+            assert logger.resample_failed == 0
+
+    def test_resample_failed_incremented(self):
+        """Predict failed or returned no actions -- no re-review occurred."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = _make_logger(tmpdir)
+            event = {
+                "router_decision": {"critical": True},
+                "reviewer_result": {"decision": "RESAMPLE", "risk_score": 0.6,
+                                    "primary_reason": "suspicious", "evidence": [],
+                                    "safer_alternative": None},
+                "controller_decision": {"execute": False, "resample_requested": True},
+                "resample_attempted": True,
+                "resample_action": None,
+                "resample_reviewer_result": None,
+                "final_action_source": None,
+            }
+            logger.log_event(event)
+            assert logger.resample_failed == 1
+            assert logger.resample_allowed_non_critical == 0
+            assert logger.resample_allowed_after_review == 0
+            assert logger.resample_blocked_after_review == 0
+
+
 class TestSummary:
     def test_summary_includes_new_counters(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -159,6 +243,10 @@ class TestSummary:
             summary = logger.build_summary()
             assert "resample_count" in summary
             assert "trusted_fallback_count" in summary
+            assert "resample_allowed_non_critical" in summary
+            assert "resample_allowed_after_review" in summary
+            assert "resample_blocked_after_review" in summary
+            assert "resample_failed" in summary
             assert summary["resample_count"] == 0
             assert summary["trusted_fallback_count"] == 0
             assert summary["control_mode"] == "allow_or_resample_once"
