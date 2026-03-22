@@ -64,6 +64,64 @@ def write_frontier_plot(
     return path
 
 
+THREAT_MODEL_COLORS = {
+    "environmental": "#2e86c1",
+    "scheming": "#e31a1c",
+}
+
+
+def write_failure_taxonomy_plot(
+    failure_counts: dict[str, dict[str, int]],
+    out_dir: str,
+) -> str | None:
+    """Horizontal bar chart of failure modes by threat model.
+
+    failure_counts: {failure_mode: {threat_model: count}}
+    Example: {"timing": {"environmental": 0, "scheming": 3}, ...}
+    Returns path to saved figure, or None if no data.
+    """
+    if not failure_counts:
+        return None
+
+    # Collect all threat models present in data.
+    threat_models = sorted(
+        {tm for counts in failure_counts.values() for tm in counts}
+    )
+    if not threat_models:
+        return None
+
+    # Guard: all counts are zero -- nothing to plot.
+    total = sum(c for counts in failure_counts.values() for c in counts.values())
+    if total == 0:
+        return None
+
+    modes = sorted(failure_counts.keys())
+    n_modes = len(modes)
+    n_groups = len(threat_models)
+    bar_height = 0.8 / max(n_groups, 1)
+
+    fig, ax = plt.subplots(figsize=(8, max(3, 0.6 * n_modes + 1)))
+
+    for i, tm in enumerate(threat_models):
+        values = [failure_counts[mode].get(tm, 0) for mode in modes]
+        offsets = [y + (i - n_groups / 2 + 0.5) * bar_height for y in range(n_modes)]
+        color = THREAT_MODEL_COLORS.get(tm, "#888888")
+        ax.barh(offsets, values, height=bar_height * 0.9, color=color, label=tm)
+
+    ax.set_yticks(range(n_modes))
+    ax.set_yticklabels(modes, fontsize=10)
+    ax.set_xlabel("Count", fontsize=11)
+    ax.set_title("Failure Taxonomy by Threat Model", fontsize=13, fontweight="bold")
+    ax.legend(loc="lower right", fontsize=10)
+    ax.grid(axis="x", alpha=0.3)
+    fig.tight_layout()
+
+    path = os.path.join(out_dir, "failure_taxonomy.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
+
 _VARIANT_BASELINES = ["B4", "B4R", "B4T"]
 
 

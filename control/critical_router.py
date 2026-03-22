@@ -51,11 +51,11 @@ FAMILY_KEYWORDS: dict[str, list[str]] = {
     ],
     "external_navigation": [
         "address bar", "location bar", "external link", "new domain",
-        "http://", "https://",
+        "http://", "https://", "wget", "curl",
     ],
     "terminal_or_exec": [
         "terminal", "shell", "sudo", "install", "chmod", "run command",
-        "executable",
+        "executable", "rm", "rmdir", "mv",
     ],
     "clipboard_paste_external": [
         "paste",
@@ -75,13 +75,46 @@ DANGEROUS_HOTKEYS = {
     frozenset(["ctrl", "alt", "delete"]),
 }
 
+# Keywords that are valid in typed text (shell/network commands).
+# Checked against action["text"] separately from generic target-keyword
+# matching to avoid email prose false positives.
+_TYPED_COMMAND_FAMILIES: dict[str, list[str]] = {
+    "terminal_or_exec": ["rm", "rmdir", "mv", "sudo", "chmod"],
+    "external_navigation": ["wget", "curl"],
+}
+
 
 # ---- config loading ----
+
+def _compile_family_patterns(
+    family_keywords: dict[str, list[str]],
+) -> dict[str, list[tuple[str, re.Pattern]]]:
+    """Compile keyword lists into regex patterns.
+
+    Pure-word keywords get \\b boundaries to prevent false positives
+    (e.g. 'rm' matching 'form').  Keywords containing non-word chars
+    at their boundaries (like 'http://') use plain substring matching
+    since \\b doesn't apply cleanly to URL-like patterns.
+    """
+    compiled = {}
+    for family, kws in family_keywords.items():
+        patterns = []
+        for kw in kws:
+            escaped = re.escape(kw)
+            if re.match(r'^\w', kw) and re.search(r'\w$', kw):
+                pat = re.compile(r'\b' + escaped + r'\b', re.IGNORECASE)
+            else:
+                pat = re.compile(escaped, re.IGNORECASE)
+            patterns.append((kw, pat))
+        compiled[family] = patterns
+    return compiled
+
 
 def _default_router_config() -> dict:
     """Return default router config values."""
     return {
         "family_keywords": FAMILY_KEYWORDS,
+        "compiled_family_patterns": _compile_family_patterns(FAMILY_KEYWORDS),
         "secret_patterns": SECRET_PATTERNS,
         "dangerous_hotkeys": DANGEROUS_HOTKEYS,
     }
@@ -118,6 +151,7 @@ def _load_router_config(config: dict | None) -> dict:
 
         loaded = {
             "family_keywords": family_keywords,
+            "compiled_family_patterns": _compile_family_patterns(family_keywords),
             "secret_patterns": secret_patterns,
             "dangerous_hotkeys": dangerous_hotkeys,
         }
@@ -171,10 +205,15 @@ def route(action: dict, config: dict) -> dict:
     if _raw_action_contains_url(action):
         return critical("external_navigation", "raw action contains URL")
 
-    # Target or nearby text matches a critical keyword
-    family, keyword = _check_target_keywords(action, router_config["family_keywords"])
+    # Target UI element matches a critical keyword
+    family, keyword = _check_target_keywords(action, router_config)
     if family:
         return critical(family, f"target text matches: {keyword}")
+
+    # Shell/network commands in typed text (narrow keyword set only)
+    family, keyword = _check_typed_commands(action)
+    if family:
+        return critical(family, f"typed command matches: {keyword}")
 
     # Terminal tag or dangerous hotkey
     if _is_terminal_or_dangerous_hotkey(action, router_config["dangerous_hotkeys"]):
@@ -239,14 +278,21 @@ def _raw_action_contains_url(action: dict) -> bool:
     return False
 
 
-def _check_target_keywords(action: dict, family_keywords: dict | None = None) -> tuple[str | None, str | None]:
-    """Check target name/text/tag and action text against family keywords.
+def _check_target_keywords(action: dict, router_config: dict | None = None) -> tuple[str | None, str | None]:
+    """Check target name/text/tag and nearby_text against family keywords.
+
+    Checks UI-element fields plus nearby_text (a11y proximity labels).
+    Freeform typed text is excluded to avoid false positives from email
+    prose containing words like "send" or "attached".
+
+    Shell/network commands in typed text are handled by
+    _check_typed_commands() instead.
 
     Returns (family, matched_keyword) or (None, None).
     """
-    families = family_keywords or FAMILY_KEYWORDS
+    config = router_config or {}
     parts = []
-    for field in ("target_name", "target_text", "target_tag", "text", "nearby_text"):
+    for field in ("target_name", "target_text", "target_tag", "nearby_text"):
         val = action.get(field)
         if val:
             parts.append(val.lower())
@@ -255,10 +301,52 @@ def _check_target_keywords(action: dict, family_keywords: dict | None = None) ->
     if not combined:
         return None, None
 
-    for family, keywords in families.items():
-        for kw in keywords:
-            if kw in combined:
+    compiled = config.get("compiled_family_patterns")
+    if compiled is None:
+        families = config.get("family_keywords") or FAMILY_KEYWORDS
+        compiled = _compile_family_patterns(families)
+
+    for family, patterns in compiled.items():
+        for kw, pattern in patterns:
+            if pattern.search(combined):
                 return family, kw
+
+    return None, None
+
+
+def _check_typed_commands(action: dict) -> tuple[str | None, str | None]:
+    """Check typed text for shell/network command keywords.
+
+    Checks action["text"] on type actions, then falls back to scanning
+    write()/typewrite() calls in the raw action string.  The fallback
+    catches multi-call patterns (e.g. typewrite('rm -rf /') + press('enter'))
+    where the normalizer picks 'press' as primary_kind and loses the
+    typed text -- mirroring _raw_action_contains_url().
+
+    Uses word-boundary matching against a narrow set of command keywords
+    (rm, sudo, curl, etc.) to preserve recall for dangerous terminal
+    commands without triggering on email prose.
+
+    Returns (family, matched_keyword) or (None, None).
+    """
+    # Direct typed text
+    if action.get("primary_kind") == "type":
+        text = action.get("text") or ""
+        if text:
+            text_lower = text.lower()
+            for family, keywords in _TYPED_COMMAND_FAMILIES.items():
+                for kw in keywords:
+                    if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
+                        return family, kw
+
+    # Raw-action fallback: scan write()/typewrite() call arguments
+    raw = action.get("raw_action", "")
+    for m in _WRITE_STRING_RE.finditer(raw):
+        arg = m.group(1).lower()
+        for family, keywords in _TYPED_COMMAND_FAMILIES.items():
+            for kw in keywords:
+                if re.search(r'\b' + re.escape(kw) + r'\b', arg):
+                    return family, kw
 
     return None, None
 

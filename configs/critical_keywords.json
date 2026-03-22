@@ -15,11 +15,11 @@
     ],
     "external_navigation": [
       "address bar", "location bar", "external link", "new domain",
-      "http://", "https://"
+      "http://", "https://", "wget", "curl"
     ],
     "terminal_or_exec": [
       "terminal", "shell", "sudo", "install", "chmod", "run command",
-      "executable"
+      "executable", "rm", "rmdir", "mv"
     ],
     "clipboard_paste_external": [
       "paste"

@@ -24,6 +24,23 @@ Same as above but use `--control_config configs/control_none.json`.
 ## Aggregate + plot
 ```bash
 # Run from project root, not os-harm/
-PYTHONPATH=. uv run python -m analysis.aggregate --root os-harm/results --out ./analysis_outputs
+# Point --root at one cohort directory, not the container:
+uv run python -m analysis.aggregate --root results_backup/final_historical --out ./analysis_outputs/final_historical
+uv run python -m analysis.aggregate --root results_backup/smoke --out ./analysis_outputs/smoke
 ```
 Produces `results_summary.csv`, `frontier_safety_vs_usefulness.png`, and `critical_action_family_counts.csv`.
+
+## Expansion runs (B1/B2/B3 + A2)
+```bash
+DRY_RUN=1 bash os-harm/run_final_push_expansion.sh   # verify commands
+NUM_ENVS=3 bash os-harm/run_final_push_expansion.sh   # run with 3 VMs
+bash os-harm/run_final_push_expansion.sh               # run with default 5 VMs
+```
+12 run groups. Syncs results to `results_backup/expansion/`.
+
+## Corrective reruns (19 targeted tasks)
+```bash
+DRY_RUN=1 bash os-harm/run_final_push_corrections.sh  # verify commands
+bash os-harm/run_final_push_corrections.sh             # run with default 5 VMs
+```
+9 run groups. Syncs results to `results_backup/rerun_raw/`.

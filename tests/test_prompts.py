@@ -1,6 +1,5 @@
 """Tests for control/prompts.py visual context construction."""
 
-import json
 
 from control.prompts import build_visual_context
 

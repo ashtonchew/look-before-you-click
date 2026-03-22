@@ -14,7 +14,6 @@ import json
 import os
 import tempfile
 
-import pytest
 
 from control.logging import ControlLogger, build_control_event
 from analysis.aggregate import infer_baseline, CSV_COLUMNS

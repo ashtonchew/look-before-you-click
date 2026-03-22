@@ -6,7 +6,6 @@ Usage:
 
 import argparse
 import csv
-import json
 import os
 import sys
 from collections import Counter, defaultdict
@@ -15,7 +14,8 @@ _project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from analysis.aggregate import read_control_events
+from analysis.aggregate import read_control_events  # noqa: E402
+from analysis.plots import write_failure_taxonomy_plot  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -76,27 +76,51 @@ def compute_family_counts(annotations: list[dict], all_events: dict[str, list[di
 
 
 def compute_failure_taxonomy(annotations: list[dict]) -> list[dict]:
-    """Group annotations by failure_mode and outcome."""
-    groups = defaultdict(lambda: {"count": 0, "threat_models": set(), "example_task_ids": []})
+    """Group annotations by (failure_mode, outcome, threat_model).
+
+    Each row has exactly one threat_model, so downstream aggregation
+    does not need to redistribute counts across threat models.
+    """
+    groups = defaultdict(lambda: {"count": 0, "example_task_ids": []})
     for ann in annotations:
         fm = ann.get("failure_mode", "").strip() or "unspecified"
         outcome = ann.get("outcome", "")
-        key = (fm, outcome)
+        tm = ann.get("threat_model", "")
+        key = (fm, outcome, tm)
         groups[key]["count"] += 1
-        groups[key]["threat_models"].add(ann.get("threat_model", ""))
         tid = ann.get("task_id", "")
         if tid and tid not in groups[key]["example_task_ids"]:
             groups[key]["example_task_ids"].append(tid)
 
     result = []
-    for (fm, outcome), data in sorted(groups.items(), key=lambda x: -x[1]["count"]):
+    for (fm, outcome, tm), data in sorted(groups.items(), key=lambda x: -x[1]["count"]):
         result.append({
             "failure_mode": fm,
             "outcome": outcome,
             "count": data["count"],
-            "threat_models": ",".join(sorted(data["threat_models"])),
+            "threat_model": tm,
             "example_task_id": data["example_task_ids"][0] if data["example_task_ids"] else "",
         })
+    return result
+
+
+def taxonomy_to_plot_data(taxonomy: list[dict]) -> dict[str, dict[str, int]]:
+    """Convert taxonomy rows to the nested dict expected by write_failure_taxonomy_plot.
+
+    Aggregates across outcomes per (failure_mode, threat_model).
+    Each taxonomy row already has a single threat_model, so counts are
+    added directly without redistribution.
+    """
+    result: dict[str, dict[str, int]] = {}
+    for row in taxonomy:
+        fm = row["failure_mode"]
+        count = row["count"]
+        tm = row.get("threat_model", "")
+        if not tm:
+            continue
+        if fm not in result:
+            result[fm] = {}
+        result[fm][tm] = result[fm].get(tm, 0) + count
     return result
 
 
@@ -186,7 +210,7 @@ def write_failure_taxonomy_csv(taxonomy: list[dict], out_dir: str) -> str:
     path = os.path.join(out_dir, "concentration_failure_taxonomy.csv")
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["failure_mode", "outcome", "count",
-                                           "threat_models", "example_task_id"])
+                                           "threat_model", "example_task_id"])
         w.writeheader()
         w.writerows(taxonomy)
     print(f"Wrote {path} ({len(taxonomy)} groups)")
@@ -274,6 +298,11 @@ def main():
 
     taxonomy = compute_failure_taxonomy(annotations)
     write_failure_taxonomy_csv(taxonomy, args.out)
+
+    plot_data = taxonomy_to_plot_data(taxonomy)
+    plot_path = write_failure_taxonomy_plot(plot_data, args.out)
+    if plot_path:
+        print(f"Wrote {plot_path}")
 
     trace_summaries = compute_trace_summary(annotations)
     write_trace_summary_csv(trace_summaries, args.out)

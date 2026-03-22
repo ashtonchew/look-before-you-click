@@ -59,6 +59,7 @@ Read these before starting work on a relevant area. Do not read all of them upfr
 | `docs/testing.md` | Writing tests or verifying your work |
 | `docs/master_plan.md` | Writing the paper, framing novelty, or understanding overall research motivation — this file is large |
 | `docs/concise_master_plan.md` | Writing the paper, framing novelty, or understanding overall research motivation — concise summary version |
+| `docs/handoff_final_push_expansion.md` | Implementing expansion scope: A2 adaptive attacker, B1/B2/B3 ablation ladder, router fix, failure taxonomy, related work |
 
 
 ## One rule
