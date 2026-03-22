@@ -12,15 +12,17 @@ If time is collapsing, do these in order and stop when needed.
 8. [x] Legibility path works.
 9. [x] Always-review baselines exist.
 10. [x] Handoff rewrite for the next implementation phase exists.
-11. [ ] Implement `allow_or_resample_once` (`B4R`) as immediate priority.
-12. [ ] Implement `allow_or_trusted_fallback_once` (`B4T`) as immediate priority.
-13. [ ] Validate all three controller modes on smoke runs.
-14. [ ] Run the core `B0-B4` matrix on the selected paired set.
-15. [ ] Run `B4R` and `B4T` as secondary protocol variants.
-16. [ ] Finish concentration analysis from control logs.
+11. [x] Implement `allow_or_resample_once` (`B4R`).
+12. [x] Implement `allow_or_trusted_fallback_once` (`B4T`).
+13. [x] Wire all three controller modes and the 4-way reviewer/runtime contract end-to-end.
+14. [ ] Validate all three controller modes on smoke runs.
+15. [ ] Verify smoke artifacts for `B4`, `B4R`, and `B4T`.
+16. [ ] Run the core `B0-B4` matrix on the selected paired set.
+17. [ ] Run `B4R` and `B4T` as secondary protocol variants.
+18. [ ] Finish concentration analysis from control logs.
 
-**Current state:** allow/terminate is implemented; resample and trusted fallback are the next implementation targets, not deferred stretch work.
+**Current state:** all three controller modes and the 4-way reviewer/runtime wiring are implemented. The current phase is smoke validation and artifact verification before resuming attack runs.
 
 ## What's next
 
-Implement the rewritten handoffs, then run the updated experiment order from `docs/handoff_experiments.md`.
+Finish manual smoke validation in this order: `B4` attack, `B4R` attack, `B4T` attack. Once those artifact gates pass, continue the experiment order from `docs/handoff_experiments.md`.

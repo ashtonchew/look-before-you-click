@@ -1,7 +1,8 @@
-"""Trusted reviewer and legibility generation.
+"""Trusted reviewer, legibility generation, and trusted fallback action.
 
 generate_legibility() -- calls untrusted model, never raises, returns None on error.
 review() -- calls trusted model, raises on error (controller fails closed).
+trusted_fallback_action() -- calls trusted model, raises on error (runtime terminates).
 """
 
 import base64
@@ -21,11 +22,13 @@ except ImportError:
 
 from control.prompts import (
     LEGIBILITY_PROMPT,
-    REVIEWER_PROMPT,
+    TRUSTED_FALLBACK_PROMPT,
     build_visual_context,
     format_action_summary,
     format_history,
+    get_reviewer_prompt,
 )
+from control.types import MODE_ALLOWED_DECISIONS, VALID_DECISIONS
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +66,7 @@ def generate_legibility(instruction: str, obs: dict, raw_response: str,
 
 
 def review(package: dict, config: dict) -> dict:
-    """Review a critical action. Returns ReviewerResult dict.
+    """Review a critical action. Returns ReviewerResult dict with 4-way decision.
 
     Raises on any error -- the controller catches and fails closed.
     """
@@ -72,6 +75,7 @@ def review(package: dict, config: dict) -> dict:
     action = package["normalized_action"]
     recent_history = package.get("recent_history", [])
     obs = package.get("obs", {})
+    controller_mode = package.get("controller_mode", "allow_or_terminate")
 
     # Build visual context conditionally
     visual_context = ""
@@ -81,7 +85,9 @@ def review(package: dict, config: dict) -> dict:
         legibility_report = package.get("legibility_report")
         visual_context = build_visual_context(a11y_tree, legibility_report)
 
-    prompt_text = REVIEWER_PROMPT.format(
+    # Select mode-aware prompt
+    prompt_template = get_reviewer_prompt(controller_mode)
+    prompt_text = prompt_template.format(
         instruction=instruction,
         raw_response=raw_response[:2000],
         action_summary=format_action_summary(action),
@@ -89,13 +95,62 @@ def review(package: dict, config: dict) -> dict:
         visual_context=visual_context,
     )
 
-    model = config.get("reviewer_model", "gpt-4o")
+    model = config.get("reviewer_model", "gpt-5.4-mini")
     include_screenshot = include_visual and obs.get("screenshot")
     messages = _build_messages(prompt_text, obs,
                                include_screenshot=bool(include_screenshot))
 
-    response_text = _call_llm(model, messages)
-    return _validate_reviewer_result(_parse_json_response(response_text))
+    response_text = _call_llm(model, messages,
+                              response_format={"type": "json_object"})
+    logger.debug("reviewer raw response: %s", response_text[:500])
+
+    # Validate with mode-aware allowed decisions
+    allowed = MODE_ALLOWED_DECISIONS.get(controller_mode)
+    return _validate_reviewer_result(_parse_json_response(response_text),
+                                     allowed_decisions=allowed)
+
+
+def trusted_fallback_action(package: dict, reviewer_result: dict,
+                            config: dict) -> dict:
+    """Generate a single trusted fallback action.
+
+    Called only when the reviewer chose DEFER_TO_TRUSTED.
+    Raises on error -- runtime terminates if fallback is unusable.
+    """
+    instruction = package["instruction"]
+    action = package["normalized_action"]
+    recent_history = package.get("recent_history", [])
+    obs = package.get("obs", {})
+
+    # Build visual context
+    visual_context = ""
+    include_visual = config.get("include_visual_context", False)
+    if include_visual:
+        a11y_tree = package.get("a11y_tree_linearized", "")
+        legibility_report = package.get("legibility_report")
+        visual_context = build_visual_context(a11y_tree, legibility_report)
+
+    prompt_text = TRUSTED_FALLBACK_PROMPT.format(
+        instruction=instruction,
+        rejected_action=package.get("raw_action", "")[:2000],
+        reviewer_decision=reviewer_result.get("decision", "DEFER_TO_TRUSTED"),
+        reviewer_reason=reviewer_result.get("primary_reason", ""),
+        reviewer_evidence=json.dumps(reviewer_result.get("evidence", [])),
+        action_summary=format_action_summary(action),
+        recent_history=format_history(recent_history),
+        visual_context=visual_context,
+    )
+
+    model = config.get("trusted_fallback_model",
+                       config.get("reviewer_model", "gpt-5.4-mini"))
+    include_screenshot = include_visual and obs.get("screenshot")
+    messages = _build_messages(prompt_text, obs,
+                               include_screenshot=bool(include_screenshot))
+
+    response_text = _call_llm(model, messages,
+                              response_format={"type": "json_object"})
+    logger.debug("trusted_fallback raw response: %s", response_text[:500])
+    return _validate_trusted_fallback(_parse_json_response(response_text))
 
 
 # ---- internal helpers ----
@@ -117,21 +172,23 @@ def _build_messages(prompt_text: str, obs: dict,
     return [{"role": "user", "content": content}]
 
 
-def _call_llm(model: str, messages: list[dict]) -> str:
+def _call_llm(model: str, messages: list[dict],
+              response_format: dict | None = None) -> str:
     """Call an LLM via OpenAI or Anthropic API.
 
     Routes by model name prefix. Uses requests.post() directly,
     matching the pattern in mm_agents/agent.py.
     """
     if model.startswith("gpt") or model.startswith("o"):
-        return _call_openai(model, messages)
+        return _call_openai(model, messages, response_format=response_format)
     elif model.startswith("claude"):
         return _call_anthropic(model, messages)
     else:
         raise ValueError(f"Unsupported model prefix: {model}")
 
 
-def _call_openai(model: str, messages: list[dict]) -> str:
+def _call_openai(model: str, messages: list[dict],
+                 response_format: dict | None = None) -> str:
     """Call OpenAI chat completions API."""
     headers = {
         "Content-Type": "application/json",
@@ -142,13 +199,17 @@ def _call_openai(model: str, messages: list[dict]) -> str:
         "model": model,
         "messages": messages,
         "temperature": 0.1,
-        "max_tokens": 1500,
     }
 
-    # o-series models don't support these params
-    if model.startswith("o"):
+    # Newer models (gpt-5.x, o-series) use max_completion_tokens
+    if model.startswith("o") or model.startswith("gpt-5"):
         payload.pop("temperature", None)
-        payload.pop("max_tokens", None)
+        payload["max_completion_tokens"] = 1500
+    else:
+        payload["max_tokens"] = 1500
+
+    if response_format is not None:
+        payload["response_format"] = response_format
 
     response = requests.post(
         "https://api.openai.com/v1/chat/completions",
@@ -241,7 +302,8 @@ def _parse_json_response(text: str) -> dict:
 
 # ---- schema validation ----
 
-_REVIEWER_REQUIRED = {"allow", "risk_score", "primary_reason", "evidence", "safer_alternative"}
+_REVIEWER_REQUIRED = {"decision", "risk_score", "primary_reason", "evidence",
+                      "safer_alternative"}
 
 _LEGIBILITY_FIELDS = {
     "action_type", "target_element", "target_text_or_label",
@@ -249,27 +311,73 @@ _LEGIBILITY_FIELDS = {
     "what_could_go_wrong", "security_relevance", "confidence",
 }
 
+_MULTI_ACTION_RE = re.compile(r"pyautogui\.\w+\(", re.IGNORECASE)
 
-def _validate_reviewer_result(parsed: dict) -> dict:
+
+def _validate_reviewer_result(parsed: dict,
+                              allowed_decisions: set[str] | None = None) -> dict:
     """Validate ReviewerResult schema. Raises on missing or mis-typed fields."""
     missing = _REVIEWER_REQUIRED - set(parsed.keys())
     if missing:
         raise ValueError(f"Reviewer response missing required fields: {missing}")
-    # allow must be a real bool -- a string like "false" would be truthy
-    if not isinstance(parsed["allow"], bool):
+
+    # decision must be a valid enum value
+    decision = parsed["decision"]
+    if decision not in VALID_DECISIONS:
         raise ValueError(
-            f"Reviewer 'allow' field must be bool, got {type(parsed['allow']).__name__}: {parsed['allow']!r}"
+            f"Reviewer 'decision' must be one of {VALID_DECISIONS}, got: {decision!r}"
         )
+
+    # If mode-specific allowed set is given, enforce it
+    if allowed_decisions and decision not in allowed_decisions:
+        raise ValueError(
+            f"Reviewer decision {decision!r} not allowed in current mode. "
+            f"Allowed: {allowed_decisions}"
+        )
+
     # risk_score must be numeric
     if not isinstance(parsed["risk_score"], (int, float)):
         raise ValueError(
             f"Reviewer 'risk_score' must be numeric, got {type(parsed['risk_score']).__name__}"
         )
+
     # evidence must be a list
     if not isinstance(parsed["evidence"], list):
         raise ValueError(
             f"Reviewer 'evidence' must be a list, got {type(parsed['evidence']).__name__}"
         )
+
+    return parsed
+
+
+def _validate_trusted_fallback(parsed: dict) -> dict:
+    """Validate TrustedFallbackResult schema. Raises on malformed output."""
+    for field in ("action", "reason", "confidence"):
+        if field not in parsed:
+            raise ValueError(f"Trusted fallback missing required field: {field}")
+
+    action = parsed["action"]
+    if action is not None and not isinstance(action, str):
+        raise ValueError(
+            f"Trusted fallback 'action' must be str or null, "
+            f"got {type(action).__name__}"
+        )
+
+    # Reject multi-action text
+    if isinstance(action, str):
+        matches = _MULTI_ACTION_RE.findall(action)
+        if len(matches) > 1:
+            raise ValueError(
+                f"Trusted fallback produced multiple actions ({len(matches)} "
+                f"pyautogui calls found). Must be exactly one."
+            )
+
+    if not isinstance(parsed["confidence"], (int, float)):
+        raise ValueError(
+            f"Trusted fallback 'confidence' must be numeric, "
+            f"got {type(parsed['confidence']).__name__}"
+        )
+
     return parsed
 
 

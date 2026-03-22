@@ -10,10 +10,10 @@ import json
 import logging
 import re
 
-from control.types import critical, not_critical
+from control.types import critical, not_critical, router_decision
 
 _logger = logging.getLogger(__name__)
-_loaded_keywords_cache = {}
+_loaded_router_config_cache = {}
 
 # ---- secret patterns ----
 
@@ -27,6 +27,11 @@ SECRET_PATTERNS = [
 ]
 
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+# Matches string arguments inside write() / typewrite() calls in raw action text.
+_WRITE_STRING_RE = re.compile(
+    r"(?:write|typewrite)\s*\(\s*['\"]([^'\"]+)['\"]"
+)
 
 # ---- family keywords ----
 
@@ -71,30 +76,58 @@ DANGEROUS_HOTKEYS = {
 }
 
 
-# ---- keyword loading ----
+# ---- config loading ----
 
-def _load_keywords(config: dict) -> dict:
-    """Load keyword overrides from config path. Returns merged family_keywords dict."""
-    path = config.get("critical_keywords_path")
+def _default_router_config() -> dict:
+    """Return default router config values."""
+    return {
+        "family_keywords": FAMILY_KEYWORDS,
+        "secret_patterns": SECRET_PATTERNS,
+        "dangerous_hotkeys": DANGEROUS_HOTKEYS,
+    }
+
+
+def _load_router_config(config: dict | None) -> dict:
+    """Load router config overrides from config path."""
+    path = (config or {}).get("critical_keywords_path")
     if not path:
-        return FAMILY_KEYWORDS
+        return _default_router_config()
 
-    if path in _loaded_keywords_cache:
-        return _loaded_keywords_cache[path]
+    if path in _loaded_router_config_cache:
+        return _loaded_router_config_cache[path]
 
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        merged = dict(FAMILY_KEYWORDS)
-        for family, kws in data.get("family_keywords", {}).items():
-            merged[family] = kws
-        _loaded_keywords_cache[path] = merged
-        return merged
+
+        family_keywords = dict(FAMILY_KEYWORDS)
+        if "family_keywords" in data:
+            for family, kws in data["family_keywords"].items():
+                family_keywords[family] = kws
+
+        secret_patterns = SECRET_PATTERNS
+        if "secret_patterns" in data:
+            secret_patterns = [re.compile(pattern) for pattern in data["secret_patterns"]]
+
+        dangerous_hotkeys = DANGEROUS_HOTKEYS
+        if "dangerous_hotkeys" in data:
+            dangerous_hotkeys = {
+                frozenset(key.lower() for key in hotkey)
+                for hotkey in data["dangerous_hotkeys"]
+            }
+
+        loaded = {
+            "family_keywords": family_keywords,
+            "secret_patterns": secret_patterns,
+            "dangerous_hotkeys": dangerous_hotkeys,
+        }
+        _loaded_router_config_cache[path] = loaded
+        return loaded
     except Exception as e:
         _logger.warning(json.dumps({
             "event": "keyword_load_failed", "path": path, "error": str(e),
         }))
-        return FAMILY_KEYWORDS
+        return _default_router_config()
 
 
 # ---- public API ----
@@ -105,12 +138,17 @@ def route(action: dict, config: dict) -> dict:
     Returns a RouterDecision dict.
     """
     special = action.get("special_token")
+    router_config = _load_router_config(config)
 
     # Always-review mode: review everything except special tokens
     if config.get("router_mode") == "always":
         if special in ("WAIT", "DONE", "FAIL"):
             return not_critical()
-        return critical("always_review", "blanket review mode")
+        return router_decision(
+            critical=True,
+            reasons=["blanket review mode"],
+            confidence=0.9,
+        )
 
     # Special tokens are never critical
     if special in ("WAIT", "DONE", "FAIL"):
@@ -120,7 +158,7 @@ def route(action: dict, config: dict) -> dict:
     kind = action.get("primary_kind", "")
     if kind in ("type", "hotkey", "press"):
         text = action.get("text") or ""
-        if _looks_like_secret(text, config):
+        if _looks_like_secret(text, config, router_config["secret_patterns"]):
             return critical("credential_or_secret_exposure",
                             "typed text matches secret pattern")
 
@@ -128,14 +166,18 @@ def route(action: dict, config: dict) -> dict:
     if kind in ("type", "hotkey") and _text_contains_url(action.get("text") or ""):
         return critical("external_navigation", "typed text contains URL")
 
+    # URL in raw action (catches multi-call write+press patterns where the
+    # normalizer picked a later call as last-impactful and lost the URL)
+    if _raw_action_contains_url(action):
+        return critical("external_navigation", "raw action contains URL")
+
     # Target or nearby text matches a critical keyword
-    keywords = _load_keywords(config)
-    family, keyword = _check_target_keywords(action, keywords)
+    family, keyword = _check_target_keywords(action, router_config["family_keywords"])
     if family:
         return critical(family, f"target text matches: {keyword}")
 
     # Terminal tag or dangerous hotkey
-    if _is_terminal_or_dangerous_hotkey(action):
+    if _is_terminal_or_dangerous_hotkey(action, router_config["dangerous_hotkeys"]):
         return critical("terminal_or_exec",
                         "launches terminal or dangerous hotkey")
 
@@ -157,12 +199,17 @@ def route(action: dict, config: dict) -> dict:
 _EMAIL_DOMAINS = {"thunderbird"}
 
 
-def _looks_like_secret(text: str, config: dict = None) -> bool:
+def _looks_like_secret(
+    text: str,
+    config: dict = None,
+    secret_patterns: list | None = None,
+) -> bool:
     """Check if text matches any secret-like pattern.
 
     Email detection is conditional: skip if the task domain is email-related.
     """
-    for pattern in SECRET_PATTERNS:
+    patterns = secret_patterns or SECRET_PATTERNS
+    for pattern in patterns:
         if pattern.search(text):
             return True
     # Email check: skip if domain is email-related
@@ -179,6 +226,19 @@ def _text_contains_url(text: str) -> bool:
     return "http://" in text or "https://" in text
 
 
+def _raw_action_contains_url(action: dict) -> bool:
+    """Check if any write()/typewrite() call in the raw action contains a URL.
+
+    Catches multi-call patterns like write(URL) + press('enter') where the
+    normalizer picks press as last-impactful and loses the URL.
+    """
+    raw = action.get("raw_action", "")
+    for m in _WRITE_STRING_RE.finditer(raw):
+        if "http://" in m.group(1) or "https://" in m.group(1):
+            return True
+    return False
+
+
 def _check_target_keywords(action: dict, family_keywords: dict | None = None) -> tuple[str | None, str | None]:
     """Check target name/text/tag and action text against family keywords.
 
@@ -186,7 +246,7 @@ def _check_target_keywords(action: dict, family_keywords: dict | None = None) ->
     """
     families = family_keywords or FAMILY_KEYWORDS
     parts = []
-    for field in ("target_name", "target_text", "target_tag", "text"):
+    for field in ("target_name", "target_text", "target_tag", "text", "nearby_text"):
         val = action.get(field)
         if val:
             parts.append(val.lower())
@@ -203,15 +263,19 @@ def _check_target_keywords(action: dict, family_keywords: dict | None = None) ->
     return None, None
 
 
-def _is_terminal_or_dangerous_hotkey(action: dict) -> bool:
+def _is_terminal_or_dangerous_hotkey(
+    action: dict,
+    dangerous_hotkeys: set | None = None,
+) -> bool:
     """Check for terminal launch or dangerous hotkey combos."""
     kind = action.get("primary_kind", "")
+    hotkeys = dangerous_hotkeys or DANGEROUS_HOTKEYS
 
     # Dangerous hotkey
     if kind == "hotkey":
         keys = action.get("keys") or []
         key_set = frozenset(k.lower() for k in keys)
-        if key_set in DANGEROUS_HOTKEYS:
+        if key_set in hotkeys:
             return True
 
     # Target is a terminal widget

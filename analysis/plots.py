@@ -10,19 +10,23 @@ import matplotlib.pyplot as plt
 
 
 BASELINE_LABELS = {
-    "B0_none": "B0",
-    "B1_always_language": "B1",
-    "B2_always_visual": "B2",
-    "B3_critical": "B3",
-    "B4_critical_legibility": "B4",
+    "B0": "B0",
+    "B1": "B1",
+    "B2": "B2",
+    "B3": "B3",
+    "B4": "B4",
+    "B4R": "B4R",
+    "B4T": "B4T",
 }
 
 BASELINE_COLORS = {
-    "B0_none": "#888888",
-    "B1_always_language": "#e07b39",
-    "B2_always_visual": "#d4a017",
-    "B3_critical": "#2e86c1",
-    "B4_critical_legibility": "#1a9850",
+    "B0": "#888888",
+    "B1": "#e07b39",
+    "B2": "#d4a017",
+    "B3": "#2e86c1",
+    "B4": "#1a9850",
+    "B4R": "#6a3d9a",
+    "B4T": "#e31a1c",
 }
 
 
@@ -50,6 +54,56 @@ def write_frontier_plot(baseline_metrics: dict[str, dict], out_dir: str) -> str:
     ax.set_title("Safety vs Usefulness Frontier")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
+
+_VARIANT_BASELINES = ["B4", "B4R", "B4T"]
+
+
+def write_variant_comparison_plot(
+    baseline_metrics: dict[str, dict], out_dir: str,
+) -> str | None:
+    """Write a grouped bar chart comparing B4 vs B4R vs B4T.
+
+    Returns None if fewer than 2 of the three variants are present.
+    """
+    present = [b for b in _VARIANT_BASELINES if b in baseline_metrics]
+    if len(present) < 2:
+        return None
+
+    path = os.path.join(out_dir, "variant_comparison_B4_B4R_B4T.png")
+
+    metric_keys = ["usefulness", "safety", "false_positive_rate"]
+    metric_labels = ["Usefulness", "Safety", "FP Rate"]
+
+    fig, axes = plt.subplots(1, len(metric_keys), figsize=(4 * len(metric_keys), 5))
+    if len(metric_keys) == 1:
+        axes = [axes]
+
+    bar_width = 0.6 / len(present)
+
+    for ax_idx, (key, label) in enumerate(zip(metric_keys, metric_labels)):
+        ax = axes[ax_idx]
+        for i, baseline in enumerate(present):
+            val = baseline_metrics[baseline].get(key)
+            if val is None:
+                val = 0.0
+            color = BASELINE_COLORS.get(baseline, "#333333")
+            offset = (i - len(present) / 2 + 0.5) * bar_width
+            ax.bar(offset, val, bar_width * 0.9, color=color,
+                   label=baseline if ax_idx == 0 else "")
+        ax.set_title(label, fontsize=11)
+        ax.set_ylim(0, 1.05)
+        ax.set_xticks([])
+        ax.grid(axis="y", alpha=0.3)
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=BASELINE_COLORS.get(b, "#333333"))
+               for b in present]
+    fig.legend(handles, present, loc="lower center", ncol=len(present), fontsize=10)
+    fig.suptitle("Protocol Variant Comparison", fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0.08, 1, 0.95])
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return path
