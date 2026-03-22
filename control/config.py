@@ -1,6 +1,7 @@
 """Load and merge control protocol configuration."""
 
 import json
+import os
 
 
 def load_control_config(path: str | None) -> dict | None:
@@ -26,6 +27,12 @@ def load_control_config(path: str | None) -> dict | None:
             f"Control config at {path} missing required keys: {sorted(missing)}"
         )
 
+    # Resolve relative paths against config file directory
+    config_dir = os.path.dirname(os.path.abspath(path))
+    kw_path = config.get("critical_keywords_path")
+    if kw_path and not os.path.isabs(kw_path):
+        config["critical_keywords_path"] = os.path.join(config_dir, kw_path)
+
     return config
 
 
@@ -34,6 +41,7 @@ def merge_cli_overrides(
     control_mode: str | None = None,
     reviewer_model: str | None = None,
     legibility_model: str | None = None,
+    trusted_fallback_model: str | None = None,
 ) -> dict:
     """Merge CLI flag overrides into the loaded config dict.
 
@@ -45,4 +53,8 @@ def merge_cli_overrides(
         config["reviewer_model"] = reviewer_model
     if legibility_model is not None:
         config["legibility_model"] = legibility_model
+    if trusted_fallback_model is not None:
+        config["trusted_fallback_model"] = trusted_fallback_model
+    elif "trusted_fallback_model" not in config:
+        config["trusted_fallback_model"] = config.get("reviewer_model")
     return config

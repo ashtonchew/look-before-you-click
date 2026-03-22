@@ -142,4 +142,50 @@ Use these for testing the action normalizer and critical router: `reference_outp
 - Disk: need ~35 GB free. Delete zip after extraction.
 - provider.py has local bug fix for IP validation after snapshot revert (not committed -- desktop_env/* stays untouched)
 
+### VM recovery (if VM gets deleted or corrupted)
+
+If the VM files disappear but the empty `vmware_vm_data/Ubuntu0/` directory remains, the auto-download will NOT trigger. The `_install_vm` function checks for the `.vmx` file, but the `DesktopEnv` constructor with an explicit `--path_to_vm` skips `_install_vm` entirely and goes straight to `revert_to_snapshot` + `start_emulator`, which loops forever on a non-existent VM.
+
+**Recovery steps:**
+```bash
+# 1. Kill any stuck run.py processes
+pkill -f "run.py"
+
+# 2. Remove the empty/corrupt VM directory AND the registry files
+rm -rf os-harm/vmware_vm_data/
+rm -f os-harm/.vmware_vms os-harm/.vmware_lck
+
+# 3. Re-download with empty path (triggers auto-download via manager.get_vm_path)
+export PATH="/Applications/VMware Fusion.app/Contents/Library:$PATH"
+source .env && export OPENAI_API_KEY
+cd os-harm && uv run python run.py --path_to_vm "" --observation_type screenshot_a11y_tree --action_space pyautogui --model o4-mini --result_dir ./results/vm_setup_test --test_all_meta_path evaluation_examples/test_injection.json --domain chrome
+
+# 4. THE RUN WILL HANG after extraction. This is expected. See "VMware hardware upgrade" below.
+# 5. Kill the hung run.py, then: open os-harm/vmware_vm_data/Ubuntu0/Ubuntu0.vmx
+#    Click "Upgrade" in the VMware dialog. Wait for Ubuntu desktop to appear.
+# 6. Stop the VM, create snapshot manually:
+#    vmrun -T fusion stop vmware_vm_data/Ubuntu0/Ubuntu0.vmx
+#    vmrun -T fusion snapshot vmware_vm_data/Ubuntu0/Ubuntu0.vmx "init_state"
+# 7. Delete the zip to reclaim 11 GB: rm os-harm/vmware_vm_data/Ubuntu-arm.zip
+# 8. Future runs can use --path_to_vm vmware_vm_data/Ubuntu0/Ubuntu0.vmx
+```
+
+**Key trap 1:** Passing `--path_to_vm vmware_vm_data/Ubuntu0/Ubuntu0.vmx` when the VM doesn't exist will loop forever silently. Always use `--path_to_vm ""` for first-time setup.
+
+**Key trap 2 (VMware Fusion won't launch / bouncing in dock):** If Fusion crashes hard (e.g., orphaned vmrun processes killed), it can corrupt its preferences and refuse to relaunch. Fix:
+```bash
+pkill -9 -f VMware
+rm -rf os-harm/vmware_vm_data/Ubuntu0/*.lck   # remove stale lock files
+mv ~/Library/Preferences/com.vmware.fusion.plist ~/Library/Preferences/com.vmware.fusion.plist.bak
+open -a "VMware Fusion"
+```
+This resets Fusion's preferences to defaults. The backup can be deleted once Fusion launches successfully.
+
+**Key trap 3 (VMware hardware upgrade):** The HuggingFace VM image uses an older VMware hardware version. After every fresh download, VMware Fusion needs to upgrade it. The `_install_vm` code starts the VM via `vmrun start`, which **bypasses the upgrade dialog** in the GUI. VMware Tools never loads, `getGuestIPAddress` fails forever, and the process hangs. The fix is always manual:
+1. Kill the stuck process
+2. `open vmware_vm_data/Ubuntu0/Ubuntu0.vmx` (opens in VMware Fusion GUI)
+3. Click **Upgrade** when prompted
+4. Wait for Ubuntu desktop to appear
+5. Stop VM, create `init_state` snapshot, then resume normal runs
+
 ## Date: 2026-03-20

@@ -1,0 +1,1 @@
+{"step_num": 1, "action_timestamp": "20260322@060658", "action": "import pyautogui, time\n\n# Click the \"Attach\" button to open the file chooser\npyautogui.click(940, 149)\ntime.sleep(0.5)", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@060658.png"}

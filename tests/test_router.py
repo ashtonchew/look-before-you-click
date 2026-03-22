@@ -1,5 +1,7 @@
 """Unit tests for control/critical_router.py."""
 
+import json
+
 import pytest
 
 from control.critical_router import (
@@ -37,6 +39,31 @@ class TestRoute:
         assert result["critical"] is True
         assert result["family"] == "send_submit_share"
 
+    def test_nearby_text_keyword_triggers_critical(self):
+        """When nearby_text contains a family keyword but target fields don't,
+        the action should still be routed as critical."""
+        action = self._action(
+            target_matched=True,
+            target_tag="push-button",
+            target_name="OK",
+            target_text="OK",
+            nearby_text="Send message forward",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "send_submit_share"
+
+    def test_nearby_text_no_keyword_not_critical(self):
+        action = self._action(
+            target_matched=True,
+            target_tag="push-button",
+            target_name="OK",
+            target_text="OK",
+            nearby_text="some harmless label",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
     def test_plain_click_not_critical(self):
         action = self._action(
             target_matched=True,
@@ -66,7 +93,8 @@ class TestRoute:
         action = self._action(target_name="Home", target_text="Home")
         result = route(action, {"router_mode": "always"})
         assert result["critical"] is True
-        assert result["family"] == "always_review"
+        assert result["family"] is None
+        assert result["reasons"] == ["blanket review mode"]
 
     def test_always_mode_skips_special_tokens(self):
         action = self._action(primary_kind="wait", special_token="WAIT")
@@ -110,6 +138,40 @@ class TestRoute:
         result = route(action, {"router_mode": "critical_only"})
         assert result["critical"] is True
         assert result["family"] == "credential_or_secret_exposure"
+
+    def test_config_loaded_secret_patterns_used(self, tmp_path):
+        path = tmp_path / "critical_keywords.json"
+        path.write_text(
+            json.dumps({"secret_patterns": ["MY_CUSTOM_SECRET"]}),
+            encoding="utf-8",
+        )
+        action = self._action(primary_kind="type", text="MY_CUSTOM_SECRET")
+        result = route(
+            action,
+            {
+                "router_mode": "critical_only",
+                "critical_keywords_path": str(path),
+            },
+        )
+        assert result["critical"] is True
+        assert result["family"] == "credential_or_secret_exposure"
+
+    def test_config_loaded_dangerous_hotkeys_used(self, tmp_path):
+        path = tmp_path / "critical_keywords.json"
+        path.write_text(
+            json.dumps({"dangerous_hotkeys": [["ctrl", "shift", "9"]]}),
+            encoding="utf-8",
+        )
+        action = self._action(primary_kind="hotkey", keys=["CTRL", "SHIFT", "9"])
+        result = route(
+            action,
+            {
+                "router_mode": "critical_only",
+                "critical_keywords_path": str(path),
+            },
+        )
+        assert result["critical"] is True
+        assert result["family"] == "terminal_or_exec"
 
 
 class TestSecretDetection:
@@ -235,3 +297,81 @@ class TestBrowserDomainChange:
     def test_no_target_returns_false(self):
         action = {"target_matched": False}
         assert _is_browser_domain_change(action) is False
+
+
+# ---------------------------------------------------------------------------
+# Multi-call URL detection (raw action scanning)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiCallURLDetection:
+    """Tests for _raw_action_contains_url via the route() entry point."""
+
+    def _action(self, raw_action, **kwargs):
+        base = {
+            "raw_action": raw_action,
+            "primary_kind": "press",
+            "x": None, "y": None,
+            "text": None, "keys": ["enter"], "button": None,
+            "special_token": None,
+            "target_matched": False,
+            "target_tag": None, "target_name": None,
+            "target_text": None, "target_bounds": None,
+            "target_match_method": "none",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_write_url_then_press_enter_is_critical(self):
+        raw = (
+            "pyautogui.click(35, 784)\n"
+            "pyautogui.click(363, 114)\n"
+            "pyautogui.write('https://swisstransfer.com', interval=0.05)\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
+
+    def test_typewrite_url_then_press_enter_is_critical(self):
+        raw = (
+            "pyautogui.typewrite('https://evil.com/exfil')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
+
+    def test_write_without_url_not_critical(self):
+        raw = (
+            "pyautogui.write('hello world')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_write_http_url_is_critical(self):
+        raw = (
+            "pyautogui.write('http://malicious-site.com')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is True
+
+    def test_single_write_url_caught_by_existing_check(self):
+        """Single write(URL) normalizes to primary_kind=type, caught by
+        the existing 'URL in typed text' check before the raw scan."""
+        action = {
+            "raw_action": "pyautogui.write('https://example.com')",
+            "primary_kind": "type",
+            "x": None, "y": None,
+            "text": "https://example.com", "keys": None, "button": None,
+            "special_token": None,
+            "target_matched": False,
+            "target_tag": None, "target_name": None,
+            "target_text": None, "target_bounds": None,
+            "target_match_method": "none",
+        }
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
