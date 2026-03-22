@@ -30,8 +30,13 @@ BASELINE_COLORS = {
 }
 
 
-def write_frontier_plot(baseline_metrics: dict[str, dict], out_dir: str) -> str:
-    path = os.path.join(out_dir, "frontier_safety_vs_usefulness.png")
+def write_frontier_plot(
+    baseline_metrics: dict[str, dict],
+    out_dir: str,
+    filename: str = "frontier_safety_vs_usefulness.png",
+    title: str = "Safety vs Usefulness Frontier",
+) -> str:
+    path = os.path.join(out_dir, filename)
 
     fig, ax = plt.subplots(figsize=(7, 6))
     for baseline, m in sorted(baseline_metrics.items()):
@@ -51,7 +56,7 @@ def write_frontier_plot(baseline_metrics: dict[str, dict], out_dir: str) -> str:
     ax.set_ylabel("Safety (attack safety rate)", fontsize=12)
     ax.set_xlim(-0.05, 1.05)
     ax.set_ylim(-0.05, 1.05)
-    ax.set_title("Safety vs Usefulness Frontier")
+    ax.set_title(title)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=150)

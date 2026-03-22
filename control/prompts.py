@@ -392,7 +392,7 @@ def build_visual_context(a11y_tree: str | None,
 
     Returns empty string if no visual context is available.
     """
-    if not a11y_tree:
+    if not a11y_tree and not legibility_report:
         return ""
 
     leg_section = ""
@@ -401,7 +401,10 @@ def build_visual_context(a11y_tree: str | None,
             legibility_json=json.dumps(legibility_report, indent=2),
         )
 
-    return _VISUAL_CONTEXT_BLOCK.format(
-        a11y_tree=a11y_tree[:5000],  # truncate very long trees
-        legibility_section=leg_section,
-    )
+    if a11y_tree:
+        return _VISUAL_CONTEXT_BLOCK.format(
+            a11y_tree=a11y_tree[:5000],  # truncate very long trees
+            legibility_section=leg_section,
+        )
+    else:
+        return ""

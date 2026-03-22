@@ -65,6 +65,23 @@ def generate_legibility(instruction: str, obs: dict, raw_response: str,
         return None
 
 
+def _run_review(prompt_text: str, obs: dict, include_screenshot: bool,
+                model: str, controller_mode: str) -> dict:
+    """Shared review call: format messages, call LLM, parse, validate.
+
+    Used by review() for runtime and by ablation for offline re-runs.
+    """
+    messages = _build_messages(prompt_text, obs,
+                               include_screenshot=include_screenshot)
+    response_text = _call_llm(model, messages,
+                              response_format={"type": "json_object"})
+    logger.debug("reviewer raw response: %s", response_text[:500])
+
+    allowed = MODE_ALLOWED_DECISIONS.get(controller_mode)
+    return _validate_reviewer_result(_parse_json_response(response_text),
+                                     allowed_decisions=allowed)
+
+
 def review(package: dict, config: dict) -> dict:
     """Review a critical action. Returns ReviewerResult dict with 4-way decision.
 
@@ -97,17 +114,8 @@ def review(package: dict, config: dict) -> dict:
 
     model = config.get("reviewer_model", "gpt-5.4-mini")
     include_screenshot = include_visual and obs.get("screenshot")
-    messages = _build_messages(prompt_text, obs,
-                               include_screenshot=bool(include_screenshot))
-
-    response_text = _call_llm(model, messages,
-                              response_format={"type": "json_object"})
-    logger.debug("reviewer raw response: %s", response_text[:500])
-
-    # Validate with mode-aware allowed decisions
-    allowed = MODE_ALLOWED_DECISIONS.get(controller_mode)
-    return _validate_reviewer_result(_parse_json_response(response_text),
-                                     allowed_decisions=allowed)
+    return _run_review(prompt_text, obs, bool(include_screenshot),
+                       model, controller_mode)
 
 
 def trusted_fallback_action(package: dict, reviewer_result: dict,
