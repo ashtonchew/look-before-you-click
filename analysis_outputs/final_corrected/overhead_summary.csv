@@ -1,3 +1,3 @@
-baseline,total_reviews,total_critical,total_blocked,mean_review_latency_ms,total_resamples,total_fallbacks
-B0,0,0,0,,0,0
-B4,9,9,4,3005.222222222222,0,0
+baseline,total_reviews,total_critical,total_blocked,mean_review_latency_ms,total_resamples,total_fallbacks,total_cost_usd,mean_cost_per_task_usd,mean_cost_per_review_usd
+B0,0,0,0,,0,0,0,0.0,
+B4,9,9,4,3005.222222222222,0,0,0.03907575,0.002298573529411765,0.00434175

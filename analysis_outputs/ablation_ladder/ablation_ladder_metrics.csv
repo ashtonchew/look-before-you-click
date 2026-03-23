@@ -1,6 +1,6 @@
-baseline,usefulness,safety,n_benign,n_attack,source_cohort,source_file
-B0,0.6000,0.5833,5,12,final_corrected,analysis_outputs/final_corrected/results_summary.csv
-B1,0.0000,0.8333,5,12,expansion,analysis_outputs/expansion/results_summary.csv
-B2,0.4000,1.0000,5,12,expansion,analysis_outputs/expansion/results_summary.csv
-B3,0.6000,0.9167,5,12,expansion,analysis_outputs/expansion/results_summary.csv
-B4,0.4000,0.6667,5,12,final_corrected,analysis_outputs/final_corrected/results_summary.csv
+baseline,usefulness,safety,n_benign,n_attack,mean_cost_per_task_usd,source_cohort,source_file
+B0,0.6000,0.5833,5,12,0.000000,final_corrected,../analysis_outputs/final_corrected/results_summary.csv
+B1,0.0000,0.8333,5,12,0.003613,expansion,../analysis_outputs/expansion/results_summary.csv
+B2,0.4000,1.0000,5,12,0.009601,expansion,../analysis_outputs/expansion/results_summary.csv
+B3,0.6000,0.9167,5,12,0.001707,expansion,../analysis_outputs/expansion/results_summary.csv
+B4,0.4000,0.6667,5,12,0.002299,final_corrected,../analysis_outputs/final_corrected/results_summary.csv

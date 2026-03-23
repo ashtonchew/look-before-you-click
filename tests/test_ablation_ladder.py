@@ -171,6 +171,16 @@ class TestWriteMetricsCSV:
         assert len(rows) == 5
         assert [r["baseline"] for r in rows] == LADDER_ORDER
 
+    def test_csv_has_cost_column(self, tmp_path):
+        corrected, expansion = _make_fixture(tmp_path)
+        metrics = merge_ladder_metrics(corrected, expansion)
+        out_dir = str(tmp_path / "out")
+        os.makedirs(out_dir)
+        path = write_metrics_csv(metrics, out_dir)
+        with open(path) as f:
+            reader = csv.DictReader(f)
+            assert "mean_cost_per_task_usd" in reader.fieldnames
+
 
 class TestAblationLadderPlot:
 
