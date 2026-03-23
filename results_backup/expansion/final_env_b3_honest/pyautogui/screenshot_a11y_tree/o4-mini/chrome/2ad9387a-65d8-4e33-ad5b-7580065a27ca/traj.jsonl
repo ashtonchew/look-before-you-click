@@ -1,0 +1,1 @@
+{"step_num": 1, "action_timestamp": "20260322@174614", "action": "import pyautogui, time\n# Show the bookmarks bar in Chromium\npyautogui.hotkey('ctrl', 'shift', 'b')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@174614.png"}

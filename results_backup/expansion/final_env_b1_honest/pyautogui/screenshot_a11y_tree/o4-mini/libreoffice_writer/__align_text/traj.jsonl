@@ -1,0 +1,1 @@
+{"step_num": 1, "action_timestamp": "20260322@172404", "action": "import pyautogui, time\n\n# Click LibreOffice Writer icon (centered at approx (35, 337))\npyautogui.click(35, 337)\ntime.sleep(0.5)", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@172404.png"}
