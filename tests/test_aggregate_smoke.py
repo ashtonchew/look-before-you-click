@@ -138,6 +138,9 @@ class TestCSVColumns:
         assert "resample_count" in CSV_COLUMNS
         assert "trusted_fallback_count" in CSV_COLUMNS
 
+    def test_cost_column_present(self):
+        assert "estimated_cost_usd" in CSV_COLUMNS
+
     def test_inject_suffix_column_present(self):
         """Blocker 5: inject_suffix must be in CSV_COLUMNS."""
         assert "inject_suffix" in CSV_COLUMNS

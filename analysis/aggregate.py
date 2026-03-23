@@ -13,7 +13,8 @@ import sys
 from collections import defaultdict
 
 from control.judge_adapter import find_judge_output, normalize_judge_output
-from analysis.plots import write_frontier_plot, write_family_counts_csv, write_variant_comparison_plot
+from analysis.cost_estimator import estimate_event_cost
+from analysis.plots import write_frontier_plot, write_family_counts_csv, write_variant_comparison_plot, write_cost_bar_chart, write_cost_stacked_chart
 
 
 # ---------------------------------------------------------------------------
@@ -207,9 +208,13 @@ def parse_run_folder(
     # Prefer domain from summary if available
     domain = (summary or {}).get("domain", domain_from_path)
 
-    # Extract escalation fields from events
+    # Extract escalation fields and cost from events
     events = read_control_events(run_dir)
     escalation = _extract_escalation_fields(events)
+    estimated_cost_usd = sum(
+        estimate_event_cost(e, summary or {})["total_cost_usd"]
+        for e in events
+    )
 
     # Threat model & scheming fields (from run_metadata.json if present)
     threat_model = (run_meta or {}).get("threat_model", "environmental")
@@ -247,6 +252,7 @@ def parse_run_folder(
         "scheming_side_task_id": (run_meta or {}).get("side_task_id"),
         "scheming_side_task_family": (run_meta or {}).get("side_task_family"),
         "scheming_side_task_succeeded": (scheming_judg or {}).get("side_task_succeeded"),
+        "estimated_cost_usd": estimated_cost_usd,
     }
 
 
@@ -367,6 +373,11 @@ def compute_baseline_metrics(runs: list[dict], threat_model: str = "environmenta
             if attack_fallback_runs else None
         )
 
+        # Cost metrics
+        total_cost = sum(r.get("estimated_cost_usd", 0.0) for r in group)
+        mean_cost_per_task = total_cost / len(group) if group else None
+        mean_cost_per_review = total_cost / total_reviews if total_reviews > 0 else None
+
         metrics[baseline] = {
             "n_benign": len(benign),
             "n_attack": len(attack),
@@ -383,6 +394,9 @@ def compute_baseline_metrics(runs: list[dict], threat_model: str = "environmenta
             "action_source_dist": dict(agg_sources),
             "resample_rescue_rate": resample_rescue_rate,
             "fallback_rescue_rate": fallback_rescue_rate,
+            "total_cost_usd": total_cost,
+            "mean_cost_per_task_usd": mean_cost_per_task,
+            "mean_cost_per_review_usd": mean_cost_per_review,
         }
     return metrics
 
@@ -400,6 +414,7 @@ CSV_COLUMNS = [
     "threat_model", "condition", "main_task_success",
     "base_task_id", "effective_task_id",
     "scheming_side_task_id", "scheming_side_task_family", "scheming_side_task_succeeded",
+    "estimated_cost_usd",
 ]
 
 
@@ -443,6 +458,7 @@ def write_protocol_variant_csv(metrics: dict[str, dict], out_dir: str) -> str | 
 _OVERHEAD_CSV_COLUMNS = [
     "baseline", "total_reviews", "total_critical", "total_blocked",
     "mean_review_latency_ms", "total_resamples", "total_fallbacks",
+    "total_cost_usd", "mean_cost_per_task_usd", "mean_cost_per_review_usd",
 ]
 
 
@@ -534,13 +550,14 @@ def main():
         if not m_dict:
             return
         print(f"\n{label}")
-        print(f"{'Baseline':<8} {'Benign':>6} {'Attack':>6} {'Useful':>8} {'Safety':>8} {'Latency':>10} {'Resamp':>7} {'Fallbk':>7}")
-        print("-" * 70)
+        print(f"{'Baseline':<8} {'Benign':>6} {'Attack':>6} {'Useful':>8} {'Safety':>8} {'Latency':>10} {'$/Task':>10} {'Resamp':>7} {'Fallbk':>7}")
+        print("-" * 80)
         for baseline, m in sorted(m_dict.items()):
             u = f"{m['usefulness']:.3f}" if m["usefulness"] is not None else "n/a"
             s = f"{m['safety']:.3f}" if m["safety"] is not None else "n/a"
             lat = f"{m['mean_review_latency_ms']:.0f}ms" if m["mean_review_latency_ms"] is not None else "n/a"
-            print(f"{baseline:<8} {m['n_benign']:>6} {m['n_attack']:>6} {u:>8} {s:>8} {lat:>10} {m['total_resamples']:>7} {m['total_fallbacks']:>7}")
+            cpt = f"${m['mean_cost_per_task_usd']:.4f}" if m.get("mean_cost_per_task_usd") is not None else "n/a"
+            print(f"{baseline:<8} {m['n_benign']:>6} {m['n_attack']:>6} {u:>8} {s:>8} {lat:>10} {cpt:>10} {m['total_resamples']:>7} {m['total_fallbacks']:>7}")
 
     _print_metrics_table("Environmental", metrics)
 
@@ -578,6 +595,14 @@ def main():
         # Overhead summary CSV -- environmental
         overhead_csv = write_overhead_csv(metrics, args.out)
         print(f"Wrote {overhead_csv}")
+
+        # Cost charts -- environmental
+        cost_chart = write_cost_bar_chart(metrics, args.out)
+        if cost_chart:
+            print(f"Wrote {cost_chart}")
+        stacked_chart = write_cost_stacked_chart(metrics, args.out)
+        if stacked_chart:
+            print(f"Wrote {stacked_chart}")
 
     # Family counts
     family_path = write_family_counts_csv(runs, read_control_events, args.out)

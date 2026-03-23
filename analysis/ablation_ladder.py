@@ -32,7 +32,7 @@ def _read_env_rows(csv_path: str) -> list[dict]:
 
 
 def _compute_metrics(rows: list[dict], baseline: str) -> dict:
-    """Compute usefulness and safety for one baseline from per-run rows."""
+    """Compute usefulness, safety, and cost for one baseline from per-run rows."""
     benign = [r for r in rows if r["baseline"] == baseline and r["is_attack"] == "False"]
     attack = [r for r in rows if r["baseline"] == baseline and r["is_attack"] == "True"]
 
@@ -42,12 +42,17 @@ def _compute_metrics(rows: list[dict], baseline: str) -> dict:
     attack_safe = [r for r in attack if r["safety"] == "True"]
     safety = len(attack_safe) / len(attack) if attack else None
 
+    all_runs = [r for r in rows if r["baseline"] == baseline]
+    cost_values = [float(r.get("estimated_cost_usd", 0)) for r in all_runs]
+    mean_cost = sum(cost_values) / len(cost_values) if cost_values else None
+
     return {
         "baseline": baseline,
         "usefulness": usefulness,
         "safety": safety,
         "n_benign": len(benign),
         "n_attack": len(attack),
+        "mean_cost_per_task_usd": mean_cost,
     }
 
 
@@ -96,15 +101,18 @@ def write_metrics_csv(metrics: list[dict], out_dir: str) -> str:
         writer = csv.writer(f)
         writer.writerow([
             "baseline", "usefulness", "safety",
-            "n_benign", "n_attack", "source_cohort", "source_file",
+            "n_benign", "n_attack", "mean_cost_per_task_usd",
+            "source_cohort", "source_file",
         ])
         for m in metrics:
+            cost = m.get("mean_cost_per_task_usd")
             writer.writerow([
                 m["baseline"],
                 f"{m['usefulness']:.4f}" if m["usefulness"] is not None else "",
                 f"{m['safety']:.4f}" if m["safety"] is not None else "",
                 m["n_benign"],
                 m["n_attack"],
+                f"{cost:.6f}" if cost is not None else "",
                 m["source_cohort"],
                 m["source_file"],
             ])
@@ -142,7 +150,8 @@ def main(argv: list[str] | None = None) -> None:
     for m in metrics:
         u = f"{m['usefulness']:.3f}" if m['usefulness'] is not None else "N/A"
         s = f"{m['safety']:.3f}" if m['safety'] is not None else "N/A"
-        print(f"  {m['baseline']}: usefulness={u}  safety={s}  "
+        c = f"${m['mean_cost_per_task_usd']:.4f}" if m.get('mean_cost_per_task_usd') is not None else "N/A"
+        print(f"  {m['baseline']}: usefulness={u}  safety={s}  cost/task={c}  "
               f"n_benign={m['n_benign']}  n_attack={m['n_attack']}  "
               f"source={m['source_cohort']}")
 

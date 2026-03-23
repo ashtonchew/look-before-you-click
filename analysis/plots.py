@@ -257,3 +257,125 @@ def write_family_counts_csv(runs: list[dict], read_control_events, out_dir: str)
         for family, c in sorted(counts.items(), key=lambda x: -x[1]["reviewed"]):
             writer.writerow([family, c["reviewed"], c["blocked"]])
     return path
+
+
+_COST_BASELINES = ["B0", "B1", "B2", "B3", "B4"]
+
+
+def write_cost_bar_chart(
+    baseline_metrics: dict[str, dict],
+    out_dir: str,
+    filename: str = "cost_per_task_by_baseline.png",
+) -> str | None:
+    """Bar chart of estimated control cost per task by baseline.
+
+    Returns None if no baselines have cost data.
+    """
+    present = [b for b in _COST_BASELINES if b in baseline_metrics
+               and baseline_metrics[b].get("mean_cost_per_task_usd") is not None]
+    if not present:
+        return None
+
+    # Sort by ascending cost
+    present.sort(key=lambda b: baseline_metrics[b]["mean_cost_per_task_usd"])
+
+    path = os.path.join(out_dir, filename)
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+
+    xs = range(len(present))
+    values = [baseline_metrics[b]["mean_cost_per_task_usd"] for b in present]
+    colors = [BASELINE_COLORS.get(b, "#333333") for b in present]
+    labels = [BASELINE_LABELS.get(b, b) for b in present]
+
+    bars = ax.bar(xs, values, color=colors, width=0.5, zorder=3)
+
+    # Annotate bars with dollar values
+    for bar, val in zip(bars, values):
+        ax.annotate(
+            f"${val:.4f}", xy=(bar.get_x() + bar.get_width() / 2, val),
+            xytext=(0, 6), textcoords="offset points",
+            ha="center", va="bottom", fontsize=9, fontweight="bold",
+        )
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("Estimated Control Cost per Task (USD)", fontsize=12)
+    ax.set_title("Control Overhead Cost by Baseline", fontsize=13,
+                 fontweight="bold", pad=12)
+    y_max = max(values) if values else 0.01
+    ax.set_ylim(0, y_max * 1.25)
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
+
+# Estimated base agent cost per task (o4-mini, ~10 steps, ~4000 input + 300 output
+# tokens per step at $1.10/$4.40 per 1M tokens).
+_BASE_AGENT_COST_PER_TASK = 0.058
+
+
+def write_cost_stacked_chart(
+    baseline_metrics: dict[str, dict],
+    out_dir: str,
+    filename: str = "cost_total_vs_control_by_baseline.png",
+) -> str | None:
+    """Stacked bar chart: base agent cost + control overhead per task.
+
+    Baselines sorted by ascending control cost so the visual progression
+    is clear.  Shows how small the control overhead is relative to the
+    agent's own prediction cost.
+    Returns None if no baselines have cost data.
+    """
+    present = [b for b in _COST_BASELINES if b in baseline_metrics
+               and baseline_metrics[b].get("mean_cost_per_task_usd") is not None]
+    if not present:
+        return None
+
+    # Sort by ascending control cost
+    present.sort(key=lambda b: baseline_metrics[b]["mean_cost_per_task_usd"])
+
+    path = os.path.join(out_dir, filename)
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+
+    xs = range(len(present))
+    control_costs = [baseline_metrics[b]["mean_cost_per_task_usd"] for b in present]
+    base_costs = [_BASE_AGENT_COST_PER_TASK] * len(present)
+    labels = [BASELINE_LABELS.get(b, b) for b in present]
+
+    # Base agent cost (bottom)
+    ax.bar(xs, base_costs, color="#CCCCCC", width=0.5, label="Agent (o4-mini)",
+           zorder=3, edgecolor="white", linewidth=0.5)
+    # Control overhead (stacked on top)
+    colors = [BASELINE_COLORS.get(b, "#333333") for b in present]
+    bars = ax.bar(xs, control_costs, bottom=base_costs, color=colors,
+                  width=0.5, label="Control overhead", zorder=3,
+                  edgecolor="white", linewidth=0.5)
+
+    # Annotate control overhead above each bar with spacing
+    y_max = max(b + c for b, c in zip(base_costs, control_costs))
+    for bar, ctrl, base in zip(bars, control_costs, base_costs):
+        total = base + ctrl
+        pct = ctrl / total * 100 if total > 0 else 0
+        ax.annotate(
+            f"+${ctrl:.4f}  ({pct:.1f}%)",
+            xy=(bar.get_x() + bar.get_width() / 2, total),
+            xytext=(0, 8), textcoords="offset points",
+            ha="center", va="bottom", fontsize=9, fontweight="bold",
+        )
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("Estimated Cost per Task (USD)", fontsize=12)
+    ax.set_title("Total Cost per Task: Agent + Control Overhead",
+                 fontsize=13, fontweight="bold", pad=12)
+    ax.legend(loc="upper left", fontsize=10, framealpha=0.9)
+    ax.set_ylim(0, y_max * 1.18)
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
