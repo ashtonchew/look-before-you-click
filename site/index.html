@@ -93,7 +93,7 @@
     a {
       color: var(--accent);
       text-decoration: none;
-      transition: color 0.15s;
+      transition: color 0.15s ease;
     }
     a:hover { color: var(--accent-hover); }
 
@@ -136,12 +136,12 @@
       gap: 5px;
     }
     .top-panel-title:hover {
-      background: rgba(255,255,255,0.1);
+      background: transparent;
     }
 
     .top-panel-clock {
       position: absolute;
-      left: 50%;
+      left: calc(50% + var(--dock-width) / 2);
       transform: translateX(-50%);
       font-size: 11px;
       font-weight: bold;
@@ -203,11 +203,11 @@
       line-height: 1;
     }
     .window-btn:hover {
-      background: rgba(0,0,0,0.1);
+      background: transparent;
     }
     .window-btn--close:hover {
-      background: var(--danger);
-      color: white;
+      background: transparent;
+      color: var(--titlebar-text);
     }
 
     .window-title {
@@ -522,7 +522,7 @@
     }
 
     .data-table tbody tr:hover {
-      background: #fafbfc;
+      background: transparent;
     }
 
     .data-table .cell-safe {
@@ -562,7 +562,7 @@
     }
 
     .data-table--dark tbody tr:hover {
-      background: #e8e8e8;
+      background: transparent;
     }
 
     /* ============================================
@@ -627,7 +627,7 @@
       font-weight: 600;
       color: white;
       font-family: var(--font);
-      transition: width 0.8s ease-out;
+      transition: width 0.45s cubic-bezier(0.23, 1, 0.32, 1);
     }
 
     .bar-fill--reviewed {
@@ -746,7 +746,7 @@
     details summary::-webkit-details-marker { display: none; }
 
     details summary:hover {
-      background: #d6d6d6;
+      background: var(--titlebar);
     }
 
     details[open] summary {
@@ -936,13 +936,13 @@
     /* Window warp-open effect for sections */
     .reveal {
       opacity: 0;
-      transform: scaleY(0.01) scaleX(0.6);
+      transform: scale(0.96);
       transform-origin: center top;
-      transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.1s ease;
+      transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.2s cubic-bezier(0.23, 1, 0.32, 1);
     }
     .reveal.visible {
       opacity: 1;
-      transform: scaleY(1) scaleX(1);
+      transform: scale(1);
     }
 
     /* ============================================
@@ -974,7 +974,7 @@
       cursor: default;
       position: relative;
     }
-    .dock-icon:hover { background: rgba(255,255,255,0.1); }
+    .dock-icon:hover { background: transparent; }
     .dock-icon svg { width: 40px; height: 40px; }
     .dock-icon--active::after {
       content: '';
@@ -1006,7 +1006,7 @@
       cursor: default;
       margin-top: auto;
     }
-    .dock-grid:hover { background: rgba(255,255,255,0.1); }
+    .dock-grid:hover { background: transparent; }
     .dock-grid-dot {
       width: 5px;
       height: 5px;
@@ -1059,13 +1059,13 @@
       padding-left: calc(var(--dock-width) + var(--space-lg));
     }
     .hero {
-      padding-left: var(--dock-width);
+      padding-left: calc(var(--dock-width) + var(--space-lg));
     }
     .section-spacer {
       padding-left: calc(var(--dock-width) + var(--space-lg));
     }
     .footer {
-      padding-left: var(--dock-width);
+      padding-left: calc(var(--dock-width) + var(--space-lg));
     }
 
     /* ============================================
@@ -1079,9 +1079,9 @@
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
       user-select: none;
       pointer-events: none;
-      transform: scale(0.05);
+      transform: scale(0.92);
       transform-origin: top left;
-      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease;
+      transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1);
       opacity: 0;
     }
     .desktop-bg-window.visible { transform: scale(1); opacity: 1; }
@@ -1173,30 +1173,97 @@
     }
 
     /* ============================================
-       18. Responsive
+       18. Hover gates (touch devices)
+       ============================================ */
+    @media (hover: hover) and (pointer: fine) {
+      .top-panel-title:hover { background: rgba(255,255,255,0.1); }
+      .window-btn:hover { background: rgba(0,0,0,0.1); }
+      .window-btn--close:hover { background: var(--danger); color: white; }
+      .data-table tbody tr:hover { background: #fafbfc; }
+      .data-table--dark tbody tr:hover { background: #e8e8e8; }
+      details summary:hover { background: #d6d6d6; }
+      .dock-icon:hover { background: rgba(255,255,255,0.1); }
+      .dock-grid:hover { background: rgba(255,255,255,0.1); }
+    }
+
+    /* ============================================
+       18b. Reduced motion
+       ============================================ */
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { transition: opacity 0.15s ease; transform: none; }
+      .reveal.visible { transform: none; }
+      .desktop-bg-window { transition: opacity 0.3s ease; transform: none; }
+      .desktop-bg-window.visible { transform: none; }
+      .bar-fill { transition: none; }
+      .typewriter { visibility: visible; }
+      .typewriter .tw-word { visibility: visible; }
+    }
+
+    /* ============================================
+       19. Responsive
        ============================================ */
     @media (max-width: 768px) {
+      /* Hide dock, keep desktop files as faint texture */
       .desktop-dock { display: none; }
-      .desktop-files { display: none; }
+      .desktop-files { opacity: 0.16; pointer-events: none; left: 0; }
+      .desktop-file-label { display: none; }
       .desktop-bg-window { display: none; }
-      .hero-content { padding: 32px 20px; max-width: 100%; }
-      .top-panel { padding-left: var(--space-lg); }
-      .hero { padding-left: 0; }
+
+      /* Top bar: declutter, touch-friendly */
+      .top-panel {
+        padding-left: 12px;
+        padding-right: 12px;
+        height: 44px;
+      }
+      .top-panel-clock { display: none; }
+      .top-panel-tray svg:nth-last-child(-n+2) { display: none; }
+
+      /* Typography scale */
+      h2 { font-size: 1.75rem; }
+      h3 { font-size: 1.5rem; }
+      .hero-title { font-size: 2rem; }
+      .hero-subtitle { font-size: 1rem; }
+      .stat-number { font-size: 2.25rem; }
+
+      /* Center panels: symmetric padding (was asymmetric from dock offset) */
+      .hero { padding-left: var(--space-sm); padding-right: var(--space-sm); padding-top: 60px; }
       .section-spacer { padding-left: var(--space-sm); padding-right: var(--space-sm); }
-      .footer { padding-left: 0; }
+      .footer { padding-left: var(--space-sm); padding-right: var(--space-sm); }
+      .window { margin-left: 0; margin-right: 0; }
+      .window-body { padding: var(--space-md); overflow-x: auto; }
+
+      /* Hero */
+      .hero-content { padding: 24px 16px 0; max-width: 100%; }
+      .hero-links { flex-direction: column; align-items: center; }
+      .hero-link { width: 100%; max-width: 280px; justify-content: center; min-height: 44px; }
       .hero-screenshots { flex-direction: column; align-items: center; gap: var(--space-md); }
-      .hero-screenshot-window { flex: 0 1 100%; max-width: 400px; }
-      .hero-block-card { position: relative; bottom: auto; left: auto; transform: none; margin-top: var(--space-md); }
+      .hero-screenshot-window { flex: 0 1 100%; max-width: 100%; }
+      .hero-block-card { position: relative; bottom: auto; left: auto; transform: none; margin-top: var(--space-md); max-width: 100%; }
+
+      /* Charts: stack labels above bars to prevent cutoff */
+      .bar-group { flex-direction: column; align-items: stretch; gap: 4px; }
+      .bar-label { min-width: unset; text-align: left; width: 100%; }
+
+      /* Tables: horizontal scroll */
+      .data-table { min-width: 520px; }
+
+      /* Grids collapse */
       .grid-2, .grid-3, .grid-2-col { grid-template-columns: 1fr; }
       .family-grid { grid-template-columns: 1fr; }
       .pipeline-mermaid svg { max-width: 100%; }
-      .bar-label { min-width: 120px; }
-      .window-body { padding: var(--space-lg); }
-      .window { margin-left: var(--space-sm); margin-right: var(--space-sm); }
+
+      /* Touch targets */
+      details summary { min-height: 44px; }
+      .window-btn { width: 44px; height: 44px; }
     }
 
     @media (max-width: 480px) {
-      .hero-links { flex-direction: column; align-items: center; }
+      .hero-title { font-size: 1.625rem; }
+      .hero-content { padding: 16px 12px 0; }
+      .window-body { padding: 0.75rem; }
+      .stat-number { font-size: 1.75rem; }
+      .stat-card { padding: var(--space-md); }
+      .bar-label { font-size: 0.7rem; }
     }
   </style>
 </head>
@@ -1628,7 +1695,7 @@
        Top Panel Nav
        ============================================ -->
   <nav class="top-panel">
-    <span class="top-panel-title"><a href="https://apartresearch.com/" target="_blank" style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"><img src="images/apart-icon.png" alt="" style="height: 16px; width: auto; display: block;">With Apart Research</a></span>
+    <span class="top-panel-title"><a href="https://apartresearch.com/" target="_blank" style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;"><img src="images/apart-icon.png" alt="" style="height: 16px; width: auto; display: block;">With Apart Research</a></span>
     <span class="top-panel-clock" id="panel-clock"></span>
     <div class="top-panel-tray">
       <!-- WiFi (Adwaita network-wireless-signal-good-symbolic) -->
@@ -1649,7 +1716,7 @@
     <div class="hero-content">
       <h1 class="hero-title">Look Before You Click</h1>
       <p class="hero-subtitle">Sparse Critical-Action Review for Computer-Use Agent Control</p>
-      <p class="hero-author">Ashton Chew &middot; Keegan Wang &middot; Harsh Akunuri &middot; with Apart Research</p>
+      <p class="hero-author" style="line-height: 2;">Ashton Chew &middot; Keegan Wang &middot; Harsh Akunuri<br>with Apart Research</p>
 
       <div class="hero-links">
         <a href="https://github.com/ashtonchew/look-before-you-click" class="hero-link hero-link--primary"><svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle;margin-right:6px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
@@ -1808,7 +1875,7 @@
         <p style="color: var(--text-muted); margin-bottom: var(--space-lg);">The control protocol inserts a decision layer between action prediction and execution. The protocol is fail-closed: review errors result in blocks.</p>
 
         <div class="pipeline-mermaid">
-          <svg viewBox="0 0 740 610" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px;display:block;margin:0 auto;" role="img" aria-label="Protocol pipeline diagram">
+          <svg viewBox="0 0 770 610" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:770px;display:block;margin:0 auto;" role="img" aria-label="Protocol pipeline diagram">
             <style>
               .p-box{fill:#fff;stroke:#bbb;stroke-width:1}
               .p-box-green{fill:#fff;stroke:#4e9a06;stroke-width:2}
