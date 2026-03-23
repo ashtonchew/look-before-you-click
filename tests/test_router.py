@@ -508,8 +508,8 @@ class TestMultiCallURLDetection:
 class TestTypedProseNotCritical:
     """Regression: email body prose must NOT trigger keyword routing.
 
-    See HANDOFF_FINAL_PUSH_EXPANSION_CORRECTIONS_TODO.md section 2,
-    "Router Precision".
+    See notes/final_push_expansion_progress.md section 2,
+    "Router precision".
     """
 
     def _action(self, **kwargs):

@@ -1,0 +1,96 @@
+{
+  "inner_prefix": "pyautogui/screenshot_a11y_tree/o4-mini",
+  "overlays": [
+    {
+      "group": "A",
+      "label": "Router coverage reruns",
+      "rerun_group": "final_rerun_router_schem_b4_honest",
+      "target_cohort": "final_schem_b4_honest",
+      "tasks": [
+        "vs_code/ec71221e-ac43-46f9-89b8-ee7d80f7e1c5__scheming__delete_backup"
+      ]
+    },
+    {
+      "group": "A",
+      "label": "Router coverage reruns",
+      "rerun_group": "final_rerun_router_schem_b4_attack",
+      "target_cohort": "final_schem_b4_attack",
+      "tasks": [
+        "vs_code/ec71221e-ac43-46f9-89b8-ee7d80f7e1c5__scheming__delete_backup"
+      ]
+    },
+    {
+      "group": "B",
+      "label": "Scheming email-substrate validity reruns",
+      "rerun_group": "final_rerun_schem_email_b0_honest",
+      "target_cohort": "final_schem_b0_honest",
+      "tasks": [
+        "thunderbird/__injected_email__scheming__beacon_nav",
+        "thunderbird/__injected_email__scheming__draft_recipient_insertion",
+        "thunderbird/__injected_email__scheming__upload_credentials"
+      ]
+    },
+    {
+      "group": "B",
+      "label": "Scheming email-substrate validity reruns",
+      "rerun_group": "final_rerun_schem_email_b0_attack",
+      "target_cohort": "final_schem_b0_attack",
+      "tasks": [
+        "thunderbird/__injected_email__scheming__beacon_nav",
+        "thunderbird/__injected_email__scheming__draft_recipient_insertion",
+        "thunderbird/__injected_email__scheming__upload_credentials"
+      ]
+    },
+    {
+      "group": "B",
+      "label": "Scheming email-substrate validity reruns",
+      "rerun_group": "final_rerun_schem_email_b4_honest",
+      "target_cohort": "final_schem_b4_honest",
+      "tasks": [
+        "thunderbird/__injected_email__scheming__beacon_nav",
+        "thunderbird/__injected_email__scheming__draft_recipient_insertion",
+        "thunderbird/__injected_email__scheming__upload_credentials"
+      ]
+    },
+    {
+      "group": "B",
+      "label": "Scheming email-substrate validity reruns",
+      "rerun_group": "final_rerun_schem_email_b4_attack",
+      "target_cohort": "final_schem_b4_attack",
+      "tasks": [
+        "thunderbird/__injected_email__scheming__beacon_nav",
+        "thunderbird/__injected_email__scheming__draft_recipient_insertion",
+        "thunderbird/__injected_email__scheming__upload_credentials"
+      ]
+    },
+    {
+      "group": "C",
+      "label": "Typed-prose precision reruns",
+      "rerun_group": "final_rerun_typed_env_b4_attack",
+      "target_cohort": "final_env_b4_attack",
+      "tasks": [
+        "thunderbird/__injected_draft__inject__thunderbird_mail_draft__terminal_local_script",
+        "thunderbird/__injected_email__inject__desktop_notification__swisstransfer_send_files"
+      ]
+    },
+    {
+      "group": "C",
+      "label": "Typed-prose precision reruns",
+      "rerun_group": "final_rerun_typed_schem_b4_honest",
+      "target_cohort": "final_schem_b4_honest",
+      "tasks": [
+        "thunderbird/__injected_draft__scheming__beacon_nav",
+        "thunderbird/__injected_draft__scheming__delete_backup"
+      ]
+    },
+    {
+      "group": "C",
+      "label": "Typed-prose precision reruns",
+      "rerun_group": "final_rerun_typed_schem_b4_attack",
+      "target_cohort": "final_schem_b4_attack",
+      "tasks": [
+        "thunderbird/__injected_draft__scheming__beacon_nav"
+      ]
+    }
+  ]
+}
