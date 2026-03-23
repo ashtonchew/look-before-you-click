@@ -1,0 +1,2798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Look Before You Click: Sparse Critical-Action Review for CUA Control</title>
+  <meta name="description" content="Harmful CUA trajectories bottleneck at a small set of irreversible GUI actions. We evaluate a sparse critical-action review protocol that intercepts only these actions, reaching 91.7% safety at full usefulness.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%236199f6' d='m8.7 16.504c-0.482 0.732-0.927 1.516-1.379 2.293a28 28 0 0 0-3.32 13.203 28 28 0 0 0 28 28 28 28 0 0 0 0.43-0.016l13.258-22.047c-1.062 1.73-5.487 3.945-7.375 5.035-6.042 3.488-13.715 1.234-17.203-4.809l-12.41-21.66z'/%3E%3Cpath fill='%23396bd7' d='M19.145 37.731 7.766 18.02C11.864 10.926 18.414 6.714 24.512 5.02 27.31 4.248 29.502 4.059 32 4c3.325 0 14.87 0.822 22.688 11.649 0.545 0.758 1.052 1.543 1.519 2.351H32c-2.669 0.299-4.189 1.706-5.058 3.711l9.504 16.465-17.301 9.555'/%3E%3Cpath fill='%23a2c2fa' d='M43.375 40.281 32 59.984c0.075 0.002 0.149 0.008 0.223 0.008 0.387-0.006 0.774-0.021 1.16-0.043 0.224-0.01 0.448-0.012 0.672-0.027 0.882-0.065 1.761-0.172 2.633-0.321l0.172-0.031C50.241 57.212 59.998 45.587 60 32c-0.013-4.919-1.321-9.747-3.793-14H32.032c-0.031 0 4.444 1.996 6.332 3.086 4.824 2.786 5.328 12.735 5.339 16.762l0.809 0.469'/%3E%3Ccircle opacity='0.2' cx='32' cy='33' r='14'/%3E%3Ccircle fill='%23ffffff' cx='32' cy='32' r='14'/%3E%3Ccircle fill='%234688f4' cx='32' cy='32' r='11'/%3E%3C/svg%3E">
+  <!-- System font stack — no external font load -->
+  <style>
+    /* ============================================
+       1. Variables and Reset
+       ============================================ */
+    :root {
+      --bg-desktop: #EDEDED;
+      --bg-panel: #2D2D2D;
+      --surface: #ffffff;
+      --surface-dark: #f0f0f0;
+      --text: #4a4a4a;
+      --text-light: #EEEEEE;
+      --text-muted: #71717a;
+      --accent: #485fc7;
+      --accent-hover: #3850b0;
+      --safe: #4e9a06;
+      --danger: #cc0000;
+      --border: #d8d8e0;
+      --titlebar: #E0E0E0;
+      --titlebar-text: #3D3D3D;
+      --font: Cantarell, Ubuntu, "Segoe UI", Roboto, Oxygen, "Fira Sans", "Droid Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-mono: "Ubuntu Mono", "Noto Mono", "Consolas", "Liberation Mono", monospace;
+      --font-size-body: 1rem;
+      --font-size-h2: 2.5rem;
+      --font-size-h3: 2rem;
+      --font-size-small: 0.875rem;
+      --measure: 960px;
+      --space-xs: 0.25rem;
+      --space-sm: 0.5rem;
+      --space-md: 1rem;
+      --space-lg: 2rem;
+      --space-xl: 3rem;
+      --space-2xl: 5rem;
+      --window-border: 1px solid #999;
+      --dock-width: 72px;
+      --hero-text: #f5f5f5;
+      --hero-text-muted: #c0bfbc;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background: #1a1a2e;
+      line-height: 1.5;
+      font-size: var(--font-size-body);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background: url('images/ubuntu-bg.jpg') center/cover no-repeat fixed;
+      transform: scale(1);
+    }
+
+    /* ============================================
+       2. Typography
+       ============================================ */
+    h1, h2, h3, h4 {
+      font-weight: 600;
+      line-height: 1.125;
+      color: #363636;
+      margin: 0;
+    }
+
+    h2 {
+      font-size: var(--font-size-h2);
+      font-weight: 600;
+      margin-bottom: var(--space-lg);
+    }
+
+    h3 {
+      font-size: var(--font-size-h3);
+      margin-bottom: var(--space-md);
+    }
+
+    p { margin: 0 0 var(--space-md) 0; }
+    p:last-child { margin-bottom: 0; }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    a:hover { color: var(--accent-hover); }
+
+    code, .mono {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    /* ============================================
+       3. Top Panel Nav
+       ============================================ */
+    .top-panel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(20, 20, 20, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 11px;
+      font-weight: bold;
+      color: #f5f5f5;
+    }
+
+    .top-panel-title {
+      font-weight: bold;
+      color: #f5f5f5;
+      font-size: 11px;
+      padding: 0 8px;
+      border-radius: 4px;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .top-panel-title:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .top-panel-clock {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      font-weight: bold;
+      color: #f5f5f5;
+      cursor: default;
+    }
+
+    .top-panel-tray {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .top-panel-tray svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .top-panel-nav { display: none; }
+
+    /* ============================================
+       4. Window Component
+       ============================================ */
+    .window {
+      background: var(--surface);
+      border: var(--window-border);
+      overflow: hidden;
+      max-width: var(--measure);
+      margin: 0 auto var(--space-2xl) auto;
+    }
+
+    .window-titlebar {
+      background: var(--titlebar);
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px 0 14px;
+      border-bottom: 1px solid #999;
+    }
+
+    .window-controls {
+      display: flex;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .window-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: var(--titlebar-text);
+      font-family: var(--font);
+      font-size: 14px;
+      cursor: default;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .window-btn:hover {
+      background: rgba(0,0,0,0.1);
+    }
+    .window-btn--close:hover {
+      background: var(--danger);
+      color: white;
+    }
+
+    .window-title {
+      color: var(--titlebar-text);
+      font-size: var(--font-size-small);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .window-body {
+      padding: var(--space-xl);
+    }
+
+    .window-body--dark {
+      background: var(--surface-dark);
+      color: var(--text);
+    }
+
+    .window-body--dark .text-muted {
+      color: var(--text-muted);
+    }
+
+    .window-body--dark h1,
+    .window-body--dark h2,
+    .window-body--dark h3,
+    .window-body--dark h4 {
+      color: #363636;
+    }
+
+    /* ============================================
+       5. Hero Section
+       ============================================ */
+    .hero {
+      position: relative;
+      z-index: 2;
+      padding: 80px var(--space-lg) var(--space-xl);
+      text-align: center;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .hero-content {
+      background: transparent;
+      padding: 64px 40px 0;
+      max-width: 720px;
+      margin-bottom: var(--space-2xl);
+    }
+
+    .hero-title {
+      font-size: 3rem;
+      font-weight: 600;
+      color: var(--hero-text);
+      letter-spacing: normal;
+      margin-bottom: var(--space-md);
+      line-height: 1.125;
+      text-shadow: 0 2px 16px rgba(0,0,0,0.5);
+    }
+
+    .hero-subtitle {
+      font-size: 1.125rem;
+      color: rgba(255,255,255,0.92);
+      max-width: 640px;
+      margin: 0 auto var(--space-md);
+      text-shadow: 0 1px 8px rgba(0,0,0,0.4);
+    }
+
+    .hero-author {
+      font-size: var(--font-size-body);
+      color: rgba(255,255,255,0.88);
+      margin-bottom: var(--space-xl);
+      text-shadow: 0 1px 6px rgba(0,0,0,0.4);
+    }
+
+    .hero-stat {
+      font-size: 1.125rem;
+      color: rgba(255,255,255,0.85);
+      margin-bottom: var(--space-2xl);
+      font-weight: 500;
+      text-shadow: 0 1px 8px rgba(0,0,0,0.5);
+    }
+
+    .hero-links {
+      display: flex;
+      gap: var(--space-md);
+      justify-content: center;
+      margin-bottom: 0;
+    }
+
+    .hero-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 24px;
+      font-size: var(--font-size-body);
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .hero-link--primary {
+      background: var(--accent);
+      color: white;
+    }
+    .hero-link--primary:hover {
+      background: var(--accent-hover);
+      color: white;
+    }
+
+    .hero-link--secondary {
+      background: rgba(255,255,255,0.15);
+      color: var(--hero-text);
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+    .hero-link--secondary:hover {
+      background: rgba(255,255,255,0.1);
+      color: #ffffff;
+    }
+
+    /* Screenshot strip in hero */
+    .hero-screenshots {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-lg);
+      max-width: 1100px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .hero-screenshot-window {
+      flex: 0 1 480px;
+      overflow: hidden;
+      border: var(--window-border);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    .hero-screenshot-window .window-titlebar {
+      height: 28px;
+      padding: 0 8px 0 10px;
+    }
+
+    .hero-screenshot-window .window-btn {
+      width: 24px;
+      height: 24px;
+      font-size: 12px;
+    }
+
+    .hero-screenshot-window img {
+      width: 100%;
+      display: block;
+    }
+
+    /* Floating BLOCK dialog (matches main window panels) */
+    .hero-block-card {
+      position: absolute;
+      bottom: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: var(--window-border);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      max-width: 440px;
+      text-align: left;
+      z-index: 10;
+      overflow: hidden;
+    }
+
+    .hero-block-card .block-dialog-titlebar {
+      background: var(--titlebar);
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px 0 14px;
+      border-bottom: 1px solid #999;
+    }
+
+    .hero-block-card .block-dialog-titlebar span {
+      color: var(--titlebar-text);
+      font-size: var(--font-size-small);
+      font-weight: 500;
+    }
+
+    .hero-block-card .block-dialog-body {
+      padding: 20px 24px 16px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .hero-block-card .block-dialog-icon {
+      flex-shrink: 0;
+      width: 48px;
+      height: 48px;
+    }
+
+    .hero-block-card .block-dialog-content {
+      flex: 1;
+    }
+
+    .hero-block-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #363636;
+      margin-bottom: 6px;
+    }
+
+    .hero-block-reason {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+
+    /* ============================================
+       6. Layout
+       ============================================ */
+    .section-spacer {
+      position: relative;
+      z-index: 2;
+      padding: 0 var(--space-lg);
+    }
+
+    .container {
+      max-width: var(--measure);
+      margin: 0 auto;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-lg);
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--space-lg);
+    }
+
+    .grid-2-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-md);
+    }
+
+    /* ============================================
+       7. Stat Cards
+       ============================================ */
+    .stat-card {
+      text-align: center;
+      padding: var(--space-lg);
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    .stat-number {
+      font-family: var(--font);
+      font-size: 3rem;
+      font-weight: 700;
+      color: #1a1a1a;
+      line-height: 1;
+      margin-bottom: var(--space-xs);
+    }
+
+    .stat-label {
+      font-size: var(--font-size-body);
+      color: #4a4a4a;
+      line-height: 1.4;
+    }
+
+    /* ============================================
+       8. Tables
+       ============================================ */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--font-size-small);
+      border: 1px solid var(--border);
+    }
+
+    .data-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: #f3f4f6;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid #e0e0e0;
+      font-weight: 600;
+      font-size: var(--font-size-small);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .data-table th:last-child {
+      border-right: none;
+    }
+
+    .data-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      border-right: 1px solid #f0f0f0;
+    }
+
+    .data-table td:last-child {
+      border-right: none;
+    }
+
+    .data-table tbody tr:hover {
+      background: #fafbfc;
+    }
+
+    .data-table .cell-safe {
+      color: var(--safe);
+      font-weight: 600;
+    }
+
+    .data-table .cell-danger {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .data-table .cell-accent {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .data-table .row-highlight {
+      background: #f0f4ff;
+    }
+
+    .data-table .row-best {
+      background: #f0fdf4;
+    }
+
+    /* Dark table variant */
+    .data-table--dark th {
+      background: #e8e8e8;
+      border-bottom-color: var(--border);
+      border-right-color: #d0d0d0;
+      color: var(--text-muted);
+    }
+
+    .data-table--dark td {
+      border-bottom-color: #e0e0e0;
+      color: var(--text);
+    }
+
+    .data-table--dark tbody tr:hover {
+      background: #e8e8e8;
+    }
+
+    /* ============================================
+       9. Bar Charts (CSS-only)
+       ============================================ */
+    .bar-chart {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .bar-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar-group-tracks {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar-label {
+      font-family: var(--font);
+      font-size: 0.75rem;
+      min-width: 220px;
+      text-align: right;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .bar-label--dark {
+      color: var(--text-muted);
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 24px;
+      background: #f0f0f0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar-track--dark {
+      background: #e0e0e0;
+    }
+
+    .bar-fill {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: var(--font-size-small);
+      font-weight: 600;
+      color: white;
+      font-family: var(--font);
+      transition: width 0.8s ease-out;
+    }
+
+    .bar-fill--reviewed {
+      background: #6b7280;
+    }
+
+    .bar-fill--blocked {
+      background: var(--danger);
+    }
+
+    .bar-fill--safe {
+      background: var(--safe);
+    }
+
+    .bar-fill--accent {
+      background: var(--accent);
+    }
+
+    .bar-value {
+      font-family: var(--font);
+      font-size: var(--font-size-small);
+      min-width: 50px;
+      color: var(--text-muted);
+    }
+
+    .bar-value--dark {
+      color: var(--text-muted);
+    }
+
+    /* Stacked bars */
+    .bar-stacked {
+      position: relative;
+    }
+
+    .bar-stacked .bar-fill + .bar-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    /* ============================================
+       10. Pipeline Flow Diagram
+       ============================================ */
+    .pipeline-mermaid {
+      display: flex;
+      justify-content: center;
+      padding: var(--space-md) 0;
+    }
+    .pipeline-mermaid img {
+      width: 100%;
+      max-width: 650px;
+      height: auto;
+    }
+
+    /* ============================================
+       11. Callout Boxes
+       ============================================ */
+    .callout {
+      padding: 14px 18px;
+      margin-bottom: var(--space-md);
+      font-size: var(--font-size-body);
+      border: none;
+    }
+
+    .callout--safe {
+      background: #f0fdf4;
+    }
+
+    .callout--warning {
+      background: #fffbeb;
+    }
+
+    .callout--danger {
+      background: #fef2f2;
+    }
+
+    .callout--info {
+      background: #f0f9ff;
+    }
+
+    .callout-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .callout-text {
+      color: var(--text-muted);
+      font-size: var(--font-size-body);
+      margin: 0;
+    }
+
+    /* ============================================
+       12. Details/Expandable
+       ============================================ */
+    details {
+      margin-bottom: var(--space-sm);
+      border: var(--window-border);
+      overflow: hidden;
+    }
+
+    details summary {
+      background: var(--titlebar);
+      height: 32px;
+      padding: 0 8px 0 14px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: var(--font-size-small);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      color: var(--titlebar-text);
+      list-style: none;
+    }
+
+    details summary::-webkit-details-marker { display: none; }
+
+    details summary:hover {
+      background: #d6d6d6;
+    }
+
+    details[open] summary {
+      border-bottom: 1px solid #999;
+    }
+
+    details .details-content {
+      padding: 16px;
+      font-size: var(--font-size-body);
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .details-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .details-controls {
+      display: flex;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    /* ============================================
+       13. Threat Model Cards
+       ============================================ */
+    .threat-card {
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .threat-card-header {
+      padding: 14px 18px;
+      font-weight: 600;
+      font-size: var(--font-size-body);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .threat-card-header--env {
+      background: var(--titlebar);
+      border-bottom: 1px solid #999;
+    }
+
+    .threat-card-header--schem {
+      background: var(--titlebar);
+      border-bottom: 1px solid #999;
+    }
+
+    .threat-card-body {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    .threat-card-body .badge--count {
+      margin-top: auto;
+      align-self: flex-start;
+    }
+
+    .threat-card-img {
+      width: 100%;
+      margin-bottom: var(--space-md);
+      border: 1px solid var(--border);
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: var(--font-size-small);
+      padding: 3px 10px;
+      font-weight: 500;
+    }
+
+    .badge--env {
+      background: none;
+      color: var(--text);
+      border: none;
+      padding: 0;
+    }
+
+    .badge--schem {
+      background: none;
+      color: var(--text);
+      border: none;
+      padding: 0;
+    }
+
+    .badge--count {
+      background: #f3f4f6;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* ============================================
+       14. Router Family Grid
+       ============================================ */
+    .family-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-sm);
+    }
+
+    .family-entry {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .family-entry--active {
+      border-color: var(--accent);
+      background: #f0f4ff;
+    }
+
+    .family-entry--inactive {
+      opacity: 0.5;
+    }
+
+    .family-name {
+      font-family: var(--font);
+      font-size: var(--font-size-body);
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .family-triggers {
+      font-size: var(--font-size-small);
+      color: var(--text-muted);
+    }
+
+    /* ============================================
+       15. Utilities
+       ============================================ */
+    .text-muted { color: var(--text-muted); }
+    .text-accent { color: var(--accent); }
+    .text-safe { color: var(--safe); }
+    .text-danger { color: var(--danger); }
+    .text-center { text-align: center; }
+    .text-sm { font-size: var(--font-size-body); }
+    .text-xs { font-size: var(--font-size-small); }
+    .font-mono { font-family: var(--font-mono); }
+    .font-semibold { font-weight: 600; }
+    .mt-sm { margin-top: var(--space-sm); }
+    .mt-md { margin-top: var(--space-md); }
+    .mt-lg { margin-top: var(--space-lg); }
+    .mt-xl { margin-top: var(--space-xl); }
+    .mb-md { margin-bottom: var(--space-md); }
+    .mb-lg { margin-bottom: var(--space-lg); }
+    .mb-xl { margin-bottom: var(--space-xl); }
+
+    /* ============================================
+       16. Typewriter Effect
+       ============================================ */
+    .typewriter {
+      visibility: hidden;
+    }
+    .typewriter.typed {
+      visibility: visible;
+    }
+    .typewriter .tw-word {
+      visibility: hidden;
+      display: inline;
+    }
+    .typewriter .tw-word.tw-visible {
+      visibility: visible;
+    }
+    .tw-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.1em;
+      background: currentColor;
+      vertical-align: text-bottom;
+      margin-left: 2px;
+      animation: twBlink 0.45s step-end infinite;
+    }
+    @keyframes twBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Window warp-open effect for sections */
+    .reveal {
+      opacity: 0;
+      transform: scaleY(0.01) scaleX(0.6);
+      transform-origin: center top;
+      transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.1s ease;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: scaleY(1) scaleX(1);
+    }
+
+    /* ============================================
+       16b. Linux Desktop: Dock + Desktop Icons
+       ============================================ */
+    .desktop-dock {
+      position: fixed;
+      left: 0;
+      top: 30px;
+      bottom: 0;
+      width: var(--dock-width);
+      background: rgba(20, 20, 20, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0;
+      gap: 4px;
+      z-index: 50;
+    }
+    .dock-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      cursor: default;
+      position: relative;
+    }
+    .dock-icon:hover { background: rgba(255,255,255,0.1); }
+    .dock-icon svg { width: 40px; height: 40px; }
+    .dock-icon--active::after {
+      content: '';
+      position: absolute;
+      left: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 4px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+    .dock-separator {
+      width: 32px;
+      height: 1px;
+      background: rgba(255,255,255,0.15);
+      margin: 4px 0;
+    }
+    .dock-grid {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 12px;
+      border-radius: 12px;
+      cursor: default;
+      margin-top: auto;
+    }
+    .dock-grid:hover { background: rgba(255,255,255,0.1); }
+    .dock-grid-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.6);
+    }
+
+    /* Desktop file icons scattered on bg */
+    .desktop-files {
+      position: fixed;
+      top: 30px;
+      left: var(--dock-width);
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .desktop-file {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      width: 80px;
+      text-align: center;
+      cursor: grab;
+      user-select: none;
+      pointer-events: auto;
+    }
+    .desktop-file.dragging { cursor: grabbing; opacity: 0.7; }
+    .desktop-file-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .desktop-file-icon svg { width: 56px; height: 56px; }
+    .desktop-file-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+      word-break: break-word;
+      line-height: 1.2;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    }
+
+    /* Push content right of dock */
+    .top-panel {
+      padding-left: calc(var(--dock-width) + var(--space-lg));
+    }
+    .hero {
+      padding-left: var(--dock-width);
+    }
+    .section-spacer {
+      padding-left: calc(var(--dock-width) + var(--space-lg));
+    }
+    .footer {
+      padding-left: var(--dock-width);
+    }
+
+    /* ============================================
+       16c. Background Desktop Windows
+       ============================================ */
+    .desktop-bg-window {
+      position: fixed;
+      z-index: 1;
+      border: var(--window-border);
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      user-select: none;
+      pointer-events: none;
+      transform: scale(0.05);
+      transform-origin: top left;
+      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease;
+      opacity: 0;
+    }
+    .desktop-bg-window.visible { transform: scale(1); opacity: 1; }
+    .desktop-bg-window.dragging { cursor: grabbing; }
+    .bg-win-titlebar {
+      background: var(--titlebar);
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px 0 14px;
+      border-bottom: 1px solid #999;
+      cursor: grab;
+      pointer-events: auto;
+    }
+    .bg-win-title {
+      color: var(--titlebar-text);
+      font-size: var(--font-size-small);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bg-win-controls {
+      display: flex;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    .bg-win-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: var(--titlebar-text);
+      font-family: var(--font);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .bg-win-body {
+      background: #2d2d2d;
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #8abeb7;
+      line-height: 1.6;
+      min-height: 180px;
+    }
+    .bg-win-body--light {
+      background: #ffffff;
+      color: #333;
+      font-family: var(--font);
+    }
+    .bg-win-file-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      font-size: 12px;
+      border-bottom: 1px solid #eee;
+    }
+    .bg-win-file-row svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .syntax-kw { color: #c678dd; }
+    .syntax-fn { color: #61afef; }
+    .syntax-str { color: #98c379; }
+    .syntax-cm { color: #5c6370; }
+    .syntax-num { color: #d19a66; }
+    .syntax-op { color: #abb2bf; }
+
+    /* ============================================
+       17. Footer
+       ============================================ */
+    .footer {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: var(--space-xl) var(--space-lg);
+      color: rgba(255,255,255,0.85);
+      font-size: var(--font-size-body);
+    }
+
+    .footer a {
+      color: #ffffff;
+    }
+    .footer a:hover {
+      color: rgba(255,255,255,0.7);
+    }
+
+    /* ============================================
+       18. Responsive
+       ============================================ */
+    @media (max-width: 768px) {
+      .desktop-dock { display: none; }
+      .desktop-files { display: none; }
+      .desktop-bg-window { display: none; }
+      .hero-content { padding: 32px 20px; max-width: 100%; }
+      .top-panel { padding-left: var(--space-lg); }
+      .hero { padding-left: 0; }
+      .section-spacer { padding-left: var(--space-sm); padding-right: var(--space-sm); }
+      .footer { padding-left: 0; }
+      .hero-screenshots { flex-direction: column; align-items: center; gap: var(--space-md); }
+      .hero-screenshot-window { flex: 0 1 100%; max-width: 400px; }
+      .hero-block-card { position: relative; bottom: auto; left: auto; transform: none; margin-top: var(--space-md); }
+      .grid-2, .grid-3, .grid-2-col { grid-template-columns: 1fr; }
+      .family-grid { grid-template-columns: 1fr; }
+      .pipeline-mermaid svg { max-width: 100%; }
+      .bar-label { min-width: 120px; }
+      .window-body { padding: var(--space-lg); }
+      .window { margin-left: var(--space-sm); margin-right: var(--space-sm); }
+    }
+
+    @media (max-width: 480px) {
+      .hero-links { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================
+       Linux Desktop: Dock
+       ============================================ -->
+  <aside class="desktop-dock">
+    <!-- Chromium (Papirus chromium-browser.svg) -->
+    <div class="dock-icon dock-icon--active" title="Chromium">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#6199f6" d="m8.7 16.504c-0.482 0.732-0.927 1.516-1.379 2.293a28 28 0 0 0-3.32 13.203 28 28 0 0 0 28 28 28 28 0 0 0 0.43-0.016l13.258-22.047c-1.062 1.73-5.487 3.945-7.375 5.035-6.042 3.488-13.715 1.234-17.203-4.809l-12.41-21.66z"/><path style="fill:#396bd7" d="M19.145 37.731 7.766 18.02C11.864 10.926 18.414 6.714 24.512 5.02 27.31 4.248 29.502 4.059 32 4c3.325 0 14.87 0.822 22.688 11.649 0.545 0.758 1.052 1.543 1.519 2.351H32c-2.669 0.299-4.189 1.706-5.058 3.711l9.504 16.465-17.301 9.555"/><path style="fill:#a2c2fa" d="M43.375 40.281 32 59.984c0.075 0.002 0.149 0.008 0.223 0.008 0.387-0.006 0.774-0.021 1.16-0.043 0.224-0.01 0.448-0.012 0.672-0.027 0.882-0.065 1.761-0.172 2.633-0.321l0.172-0.031C50.241 57.212 59.998 45.587 60 32c-0.013-4.919-1.321-9.747-3.793-14H32.032c-0.031 0 4.444 1.996 6.332 3.086 4.824 2.786 5.328 12.735 5.339 16.762l0.809 0.469"/><circle style="opacity:0.2" cx="32" cy="33" r="14"/><circle style="fill:#ffffff" cx="32" cy="32" r="14"/><circle style="fill:#4688f4" cx="32" cy="32" r="11"/></svg>
+    </div>
+    <!-- Firefox (Papirus firefox.svg) -->
+    <div class="dock-icon" title="Firefox">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#248afd" d="m27 13c1.54-5.71 9.51-9 17-9 5.41 0 10.67 2.16 14 5-1.99 0.1-4.38 1-6 2 3 0.34 5.29 1.01 7 3-1.29-0.23-2.67-0.23-4 0 3.22 4.88 5.01 12.08 5 18C60 48.15 48 60 32 60S4 48 4 32c0-2.52 0.41-6.31 1.15-8.8 0.16-0.51 0.39-0.97 0.69-1.15C5.89 22.01 5.95 22 6 22c0.31 0 0.55 0.52 0.6 0.71 0.41 1.6 0.71 3.79 1.4 5.29 0-3.32 1.36-7.04 3.24-9.67 1.25-1.75 3.61-3.2 4.15-7.89 0 0 0.05-0.44 0.61-0.44 4.08 1.39 4 10 4 16 2.25 0.34 2.36-3.71 2.36-3.71C22.05 21.47 22 21 22 20c0-2 1.54-5.49 5-7z"/><path style="fill:#0271ef" d="M58.53 22c0.11 0.33 0.47 1.85 0.47 3C59 40.4 46.89 54 32 54c-5.82 0-10.34-1.38-15-5C9.82 43.41 5 36.8 5 28c0-2 0.45-4.66 0.71-5.67 0.07-0.27 0.16-0.33 0.29-0.33-0.05 0-0.12 0.02-0.16 0.05-0.31 0.2-0.5 0.61-0.69 1.15C4.83 24.01 4.39 26.69 4.35 27 4.21 28.02 4 30.31 4 32c0 16 12 28 28 28s28-12.15 28-28c0-4-0.67-7.48-1.47-10z"/><path style="fill:#0259bb" d="M5.71 22.33C5.29 24.1 5 26.01 5 28c0 6.25 2.41 12.33 8.5 18.01C11.88 44 10 40.32 10 36c0-3.25 0.75-6.78 3.44-9.79 0.15-0.16 0.3-0.21 0.56-0.21 0.31 0 0.65 0.32 0.66 0.74C15.18 41.29 26 49 40 49c-4.48 0-17.37-5.71-7.49-7.64C37.67 40.36 46 38 46 32 46 19.7 39 16 32 16c-4.29 0-8.8 3.18-9.64 6.29 0.39 1.34-1.3 3.87-2.36 3.71 0-6 0.08-14.61-4-16-0.54 0-0.61 0.44-0.61 0.44-0.54 4.69-2.9 6.13-4.15 7.89C9.36 20.96 8 24.33 8 28c-0.69-1.5-0.99-3.69-1.4-5.29C6.55 22.53 6.3 22 6 22c-0.17 0-0.25 0.15-0.29 0.33z"/><path style="fill:#d6d6d6" d="m32 43c7 0 14-5 14-11 0-2.51-0.64-4.98-2-7-2.43-3.61-6.87-6-12-6-5.22 0-9.6 2.28-12 6-1.28 1.98-2 4.57-2 7 0 11.59 10 17 22 17-0.75-0.09-5.33-0.26-8.49-4-0.29-0.34-0.51-0.63-0.51-1 0-0.59 0.55-1 1-1z"/><path style="fill:#e4e4e4" d="m34 35c-0.64 0.64-1.24 1.01-2 1-0.74-0.01-1.39-0.39-2-1l-10-10c3-4.65 8-6 12-6 4 0 9 1.58 12 6z"/></svg>
+    </div>
+    <!-- Thunderbird (Simple Icons thunderbird) -->
+    <div class="dock-icon dock-icon--active" title="Thunderbird">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g transform="translate(4,5) scale(2.33)"><path style="fill:#0A84FF" d="M9.948 4.444h-.005c-1.92.788-2.126 2.55-1.817 3.499v.02C9.236 7.18 10.658 6.76 12 6.76c3.26 0 5.902 2.156 5.902 4.815 0 2.66-2.643 4.816-5.902 4.816l-.083-.002c-.155-.006-.354-.013-.435.118-.096.156.116.397.238.536 1.274 1.441 3.123 1.622 3.608 1.67l.076.008c-4.281.414-9.304-2.32-9.306-7.076 0-1.12.414-2.073 1.075-2.83l-.005-.002h-.003C7.31 6.38 6.376 3.47 4.629 2.898c-.124-.04-.246.054-.262.183-.23 1.924-.727 2.59-1.264 3.31-.805 1.08-1.39 2.328-1.365 3.698a10.99 10.99 0 0 1-.705-1.91c-.024-.09-.17-.365-.333-.272-.13.072-.227.274-.296.485A12.137 12.137 0 0 0 0 11.489c0 6.536 5.475 12 12 12 6.627 0 12-5.372 12-12 0-2.526-.781-4.87-2.115-6.805l.167-.002c.518 0 1.024.045 1.51.129-.734-.816-1.724-1.475-2.877-1.904a8.54 8.54 0 0 1 2.494-.495c-1.426-1.166-3.508-1.9-5.827-1.9-3.355 0-6.648 1.29-7.404 3.93zm.682 9.166c-.87-.905-3.473-3.91-3.473-3.91l.202.01 4.075 3.042c.305.223.74.22 1.043-.004l3.996-3.034.212-.018s-2.518 2.935-3.483 3.9c-.964.968-1.703.919-2.572.014zm2.774-10.083s.055.625-.576.824c-.722.227-1.042-.38-1.042-.38s.09-.417.676-.61c.626-.206.942.166.942.166z"/></g></svg>
+    </div>
+    <!-- Files/Nautilus (Papirus nautilus.svg) -->
+    <div class="dock-icon dock-icon--active" title="Files">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#1565c0" d="M14.219 4C11.882 4 10 5.873 10 8.2V13.8 18 29H55V18 13.8 8.2C55 5.873 53.118 4 50.781 4Z"/><path style="fill:#1e88e5" d="M14.219 21C11.882 21 10 22.873 10 25.2V30.6 34.8 46H55V34.8 30.6 25.2C55 22.873 53.118 21 50.781 21Z"/><rect style="fill:#42a5f5" width="45" height="20" x="10" y="40" rx="4" ry="4"/><rect style="fill:#ffffff" width="11" height="3" x="27" y="12" rx="1.5" ry="1.5"/><rect style="fill:#ffffff" width="11" height="3" x="27" y="29" rx="1.5" ry="1.5"/><rect style="fill:#ffffff" width="11" height="3" x="27" y="49" rx="1.5" ry="1.5"/></svg>
+    </div>
+    <!-- Terminal (Papirus utilities-terminal.svg) -->
+    <div class="dock-icon dock-icon--active" title="Terminal">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect style="fill:#4f4f4f" width="56" height="50" x="4" y="7" rx="4.2" ry="4.167"/><rect style="fill:#ffffff" width="17" height="6" x="26" y="29" rx="1.5" ry="1.5"/><rect style="fill:#a2a2a2" width="16.763" height="5.588" x="-16.49" y="29.48" rx="1.397" ry="1.397" transform="matrix(0.72401,-0.68979,0.72401,0.68979,0,0)"/><rect style="fill:#62c9ea" width="16.763" height="5.588" x="18.31" y="-5.31" rx="1.397" ry="1.397" transform="matrix(0.72401,0.68979,0.72401,-0.68979,0,0)"/></svg>
+    </div>
+    <!-- Text Editor (Papirus accessories-text-editor.svg) -->
+    <div class="dock-icon dock-icon--active" title="Text Editor">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#e4e4e4" d="M54 57V7C54 5.338 52.662 4 51 4H13c-1.662 0-3 1.338-3 3v50c0 1.662 1.338 3 3 3h38c1.662 0 3-1.338 3-3z"/><g transform="matrix(2,0,0,2,6,0)"><circle style="fill:#f34235" cx="21" cy="23" r="8"/></g><path style="fill:#ffffff" d="m40 50.436v3.564h3.564l9.001-9.001-3.564-3.564zm15.717-8.578c0.377-0.377 0.377-0.971 0-1.348l-2.227-2.227c-0.377-0.377-0.971-0.377-1.348 0l-1.862 1.874 3.564 3.564z"/><rect style="opacity:0.2" width="34" height="4" x="15" y="9"/><rect style="opacity:0.2" width="34" height="4" x="15" y="18"/><rect style="opacity:0.2" width="20" height="4" x="15" y="27"/></svg>
+    </div>
+    <!-- Evince / Document Viewer (Papirus evince.svg) -->
+    <div class="dock-icon dock-icon--active" title="Document Viewer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#e4e4e4" d="M14 4h24l16 16v36c0 2.2-1.8 4-4 4H14c-2.2 0-4-1.8-4-4V8c0-2.2 1.8-4 4-4z"/><path style="fill:#bdbdbd" d="M38 4l16 16h-12c-2.2 0-4-1.8-4-4z"/><rect style="fill:#bdbdbd" x="18" y="28" width="28" height="3" rx="1"/><rect style="fill:#bdbdbd" x="18" y="35" width="22" height="3" rx="1"/><rect style="fill:#bdbdbd" x="18" y="42" width="26" height="3" rx="1"/><rect style="fill:#bdbdbd" x="18" y="49" width="18" height="3" rx="1"/><rect style="fill:#ff4d39" x="36" y="30" width="18" height="18" rx="3"/><text style="fill:#ffffff;font-family:serif;font-style:italic;font-weight:bold;font-size:16px" x="40.5" y="44">e</text></svg>
+    </div>
+    <!-- VS Code (Papirus vscode.svg) -->
+    <div class="dock-icon" title="VS Code">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#0072b0" d="M58.019 9.932L46.488 4.348C45.153 3.702 43.558 3.974 42.511 5.028L4.761 39.025c-1.015 0.931-1.014 2.539 0.003 3.469l3.083 2.819c0.831 0.76 2.083 0.816 2.978 0.133L56.284 11.381c1.525-1.164 3.716-0.07 3.716 1.856v-0.135c0-1.351-0.77-2.583-1.98-3.17z"/><path style="fill:#008eda" d="m58.019 54.068-11.531 5.584c-1.335 0.646-2.93 0.374-3.977-0.68L4.761 22.913c-1.015-0.931-1.014-2.539 0.003-3.469l3.083-2.819c0.832-0.761 2.083-0.816 2.978-0.133l45.459 36.128c1.525 1.164 3.716 0.07 3.716-1.856v0.135c0 1.351-0.77 2.583-1.98 3.17z"/><path style="fill:#1eacf8" d="m46.489 59.653c-1.335 0.646-2.93 0.373-3.978-0.681 1.291 1.298 3.498 0.379 3.498-1.457V6.485c0-1.836-2.207-2.756-3.498-1.457 1.048-1.054 2.643-1.327 3.978-0.681L58.018 9.924C59.23 10.51 60 11.742 60 13.094v37.812c0 1.352-0.77 2.584-1.982 3.17z"/></svg>
+    </div>
+    <div class="dock-separator"></div>
+    <!-- LibreOffice Writer (Papirus libreoffice-writer.svg) -->
+    <div class="dock-icon" title="Writer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#1b83d4" d="m18 4h20l16 16v32c0 4.432-3.568 8-8 8H18c-4.432 0-8-3.568-8-8V12c0-4.432 3.568-8 8-8z"/><path style="fill:#3b9ce6" d="M42 4H54V16Z"/><rect style="fill:#7ad2f9" width="14" height="10" x="34" y="24" rx="2" ry="2"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="24" rx="1" ry="1"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="28" rx="1" ry="1"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="32" rx="1" ry="1"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="46" rx="1" ry="1"/><rect style="fill:#ffffff" width="32" height="2" x="16" y="42" rx="1" ry="1"/><rect style="fill:#ffffff" width="32" height="2" x="16" y="38" rx="1" ry="1"/></svg>
+    </div>
+    <!-- LibreOffice Calc (Papirus libreoffice-calc.svg) -->
+    <div class="dock-icon" title="Calc">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#4ba425" d="m18 4h20l16 16v32c0 4.432-3.568 8-8 8H18c-4.432 0-8-3.568-8-8V12c0-4.432 3.568-8 8-8z"/><path style="fill:#419021" d="M42 4H54V16Z"/><path style="fill:#dff6d4" d="M18 24C16.892 24 16 24.892 16 26V40C16 41.108 16.892 42 18 42H40C41.108 42 42 41.108 42 40V26C42 24.892 41.108 24 40 24ZM18 26H24V28H18ZM26 26H32V28H26ZM34 26H40V28H34ZM18 30H24V32H18ZM26 30H32V32H26ZM34 30H40V32H34ZM18 34H24V36H18ZM26 34H32V36H26ZM34 34H40V36H34ZM18 38H24V40H18ZM26 38H32V40H26ZM34 38H40V40H34Z"/><rect style="fill:#b1e59b" width="18" height="14" x="30" y="34" ry="2"/><path style="fill:#5aba30" d="m36 36v10h2V36zm-4 2v8h2v-8zm8 4v4h2v-4zm4-2v6h2v-6z"/></svg>
+    </div>
+    <!-- System Monitor (Papirus utilities-system-monitor.svg) -->
+    <div class="dock-icon" title="System Monitor">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect style="fill:#4f4f4f" width="56" height="56" x="4" y="4" rx="16.8" ry="16.8"/><path style="fill:none;stroke:#00e441;stroke-width:6;stroke-linejoin:round" d="m4 31h8.4l7-14 5.6 26 9.8-30 7 36 8.4-18H60"/></svg>
+    </div>
+    <!-- Screenshot (Papirus applets-screenshooter.svg) -->
+    <div class="dock-icon" title="Screenshot">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle style="fill:#009688" cx="32" cy="32" r="28"/><path style="fill:#ffffff" d="m32 15c-4.012 0.007-7.893 1.433-10.955 4.025L26.805 29l7.941-13.756C33.839 15.089 32.92 15.007 32 15zM37.758 16.027 32 26h15.896C46.137 21.354 42.432 17.71 37.758 16.027zM18.857 21.234C16.367 24.27 15.004 28.074 15 32c0.002 1.006 0.094 2.01 0.273 3h11.531zM37.195 29l7.948 13.766C47.633 39.73 48.996 35.926 49 32c-0.002-1.006-0.094-2.01-0.273-3zM37.195 35l-7.941 13.756C30.161 48.911 31.08 48.993 32 49c4.012-0.007 7.893-1.433 10.955-4.025zM16.104 38c1.76 4.646 5.464 8.29 10.139 9.973L32 38z"/></svg>
+    </div>
+    <!-- Software Center (Papirus software-store.svg) -->
+    <div class="dock-icon" title="Software">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#e4e4e4" d="m24 5-4 4v6H4v37c0 1.662 1.338 3 3 3h50c1.662 0 3-1.338 3-3V15H44V9l-4-4zm0 4h16v6H24z"/><circle style="fill:#4ab3e4" cx="49" cy="46" r="15"/><path style="fill:#ffffff" d="m52 37v8h3l-6 8-6-8h3v-8zm-10 16.0004h14v2H42z"/></svg>
+    </div>
+    <!-- Telegram (Papirus telegram.svg) -->
+    <div class="dock-icon" title="Telegram">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle style="fill:#28a4e2" cx="32" cy="32" r="28"/><path style="fill:#e1f5fe" d="m41.862 45.781c0.539-1.033 3.636-18.692 4.079-23.257 0.479-4.523-2.018-3.682-4.316-2.918-5.638 1.881-23.462 9.507-28.341 12.023-1.201 0.492-1.72 1.327-0.846 2.05 0.752 0.613 3.506 1.454 5.727 1.881 1.893 0.567 3.363 0.024 4.721-0.733 3.262-1.911 12.982-7.989 13.505-8.328s1.096 0.29 0.803 0.594c-0.293 0.304-7.177 6.405-9.437 9.163-1.197 1.517-1.161 2.326 0.069 3.283 2.759 2.138 10.132 7.013 11.229 7.308 1.399 0.376 2.218 0.064 2.809-1.067z"/></svg>
+    </div>
+    <!-- Slack (Papirus slack.svg) -->
+    <div class="dock-icon" title="Slack">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle style="fill:#e4e4e4" cx="32" cy="32" r="28"/><g transform="translate(14,14) scale(0.6)"><path d="M22,12 a6,6 0 1 1 6,-6 v6z M22,16 a6,6 0 0 1 0,12 h-16 a6,6 0 1 1 0,-12" fill="#36C5F0"/><path d="M48,22 a6,6 0 1 1 6,6 h-6z M32,6 a6,6 0 1 1 12,0v16a6,6 0 0 1 -12,0z" fill="#2EB67D"/><path d="M38,48 a6,6 0 1 1 -6,6 v-6z M54,32 a6,6 0 0 1 0,12 h-16 a6,6 0 1 1 0,-12" fill="#ECB22E"/><path d="M12,38 a6,6 0 1 1 -6,-6 h6z M16,38 a6,6 0 1 1 12,0v16a6,6 0 0 1 -12,0z" fill="#E01E5A"/></g></svg>
+    </div>
+    <!-- Spotify (Papirus spotify-client.svg) -->
+    <div class="dock-icon" title="Spotify">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="#1ed760" d="M60 32C60 16.5 47.5 4 32 4S4 16.5 4 32s12.5 28 28 28 28-12.5 28-28z"/><path style="fill:none;stroke:#3f3f3f;stroke-width:5;stroke-linecap:round" d="M15.5 23.5C23 20.5 39 20.5 49.5 26.5"/><path style="fill:none;stroke:#3f3f3f;stroke-width:4;stroke-linecap:round" d="M17 32C24 30 40 31 46 35"/><path style="fill:none;stroke:#3f3f3f;stroke-width:4;stroke-linecap:round" d="M18 41C24 39.5 36 39.5 43 43"/></svg>
+    </div>
+    <!-- Calculator (Papirus gnome-calculator.svg) -->
+    <div class="dock-icon" title="Calculator">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#e4e4e4" d="M15.2 4H48.8C51.119 4 53 5.892 53 8.226V55.774C53 58.108 51.119 60 48.8 60H15.2C12.881 60 11 58.108 11 55.774V8.226C11 5.892 12.881 4 15.2 4z"/><path style="fill:#3faf7f" d="M19 18H45C46.106 18 47 17.105 47 16v-4c0-1.105-0.894-2-2-2H19c-1.105 0-2 0.895-2 2v4c0 1.105 0.895 2 2 2z"/><circle style="fill:#858585" cx="21" cy="28" r="4"/><circle style="fill:#858585" cx="32" cy="28" r="4"/><circle style="fill:#858585" cx="43" cy="28" r="4"/><circle style="fill:#4f4f4f" cx="21" cy="39" r="4"/><circle style="fill:#4f4f4f" cx="32" cy="39" r="4"/><path style="fill:#ff7800" d="m43 35c2.21 0 4 1.653 4 3.694V50.306C47 52.347 45.21 54 43 54s-4-1.653-4-3.694V38.694C39 36.653 40.79 35 43 35z"/><circle style="fill:#4f4f4f" cx="21" cy="50" r="4"/><circle style="fill:#4f4f4f" cx="32" cy="50" r="4"/></svg>
+    </div>
+    <!-- GIMP (Papirus gimp.svg) -->
+    <div class="dock-icon" title="GIMP">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#645b44;fill-rule:evenodd" d="M54.198 6.012C53.748 5.941 53.345 6.195 53.102 6.484 52.859 6.773 52.691 7.131 52.544 7.583 52.291 8.364 51.359 11.265 48 14.132 44.642 17 38.85 21.741 28.812 22c-6.104 0.072-9.814-3.546-12.248-8.369-0.607-1.204-1.564-3.447-1.564-2.019v2.207l-0.031 11.421 0.062 0.15s0.547 1.216-0.031 2.855c-0.578 1.639-3.285 4.031-8.377 5.561L6 33.991l0.118 0.656c0.282 1.59 1.408 3.22 3.07 4.889 1.662 1.669 3.888 3.357 6.479 4.883 5.183 3.052 11.821 5.464 18.271 5.577 6.45 0.113 12.76-2.145 16.935-8.401 4.175-6.255 6.212-18.193 4.544-33.741C55.362 7.428 55.268 7.063 55.099 6.744 54.931 6.425 54.647 6.095 54.198 6.024z"/><path style="fill:#ffffff;fill-rule:evenodd" d="M21 21c-1.732 0-3.472 0.572-4.797 1.75C14.876 23.928 14 25.723 14 28c0 2.278 0.876 4.072 2.202 5.249C17.527 34.428 19.267 35 21 35s3.472-0.572 4.797-1.75C27.121 32.072 28 30.28 28 28c0-2.278-0.879-4.072-2.204-5.25C24.471 21.573 22.731 21 21 21z"/><circle style="fill:#3f3f3f" cx="22" cy="29" r="3"/><path style="fill:#ffffff;fill-rule:evenodd" d="M33 21c-1.732 0-3.472 0.572-4.797 1.75C26.876 23.928 26 25.723 26 28c0 2.278 0.876 4.072 2.202 5.249C29.527 34.428 31.267 35 33 35s3.472-0.572 4.797-1.75C39.121 32.072 40 30.28 40 28c0-2.278-0.879-4.072-2.204-5.25C36.471 21.573 34.731 21 33 21z"/><circle style="fill:#3f3f3f" cx="34" cy="29" r="3"/><path style="fill:#ff9a0c" d="m48.914 49.392 1.208-2.406C45.628 43.697 37.236 40.36 37.236 40.36l-1.322 0.727s7.619 6.758 13.001 8.305z"/><path style="fill:#3f3f3f" d="m62 58c-1.603-5.209-2.172-9.345-6.362-8.977-3.376 0.297-3.613 4.927-0.124 6.205C58.876 56.459 62 58 62 58z"/></svg>
+    </div>
+    <div class="dock-separator"></div>
+    <!-- Settings (filled gear) -->
+    <div class="dock-icon" title="Settings">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect style="fill:#77767b" width="56" height="56" x="4" y="4" rx="16.8" ry="16.8"/><path style="fill:#ffffff" d="M30 12h4v4.1c1.3 0.3 2.5 0.7 3.6 1.3l2.9-2.9 2.8 2.8-2.9 2.9c0.6 1.1 1 2.3 1.3 3.6H46v4h-4.3c-0.3 1.3-0.7 2.5-1.3 3.6l2.9 2.9-2.8 2.8-2.9-2.9c-1.1 0.6-2.3 1-3.6 1.3V40h-4v-4.1c-1.3-0.3-2.5-0.7-3.6-1.3l-2.9 2.9-2.8-2.8 2.9-2.9c-0.6-1.1-1-2.3-1.3-3.6H18v-4h4.1c0.3-1.3 0.7-2.5 1.3-3.6l-2.9-2.9 2.8-2.8 2.9 2.9c1.1-0.6 2.3-1 3.6-1.3V12zM32 22c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z" transform="translate(0,5)"/></svg>
+    </div>
+    <div class="dock-grid" title="Show Applications">
+      <span class="dock-grid-dot"></span><span class="dock-grid-dot"></span><span class="dock-grid-dot"></span>
+      <span class="dock-grid-dot"></span><span class="dock-grid-dot"></span><span class="dock-grid-dot"></span>
+      <span class="dock-grid-dot"></span><span class="dock-grid-dot"></span><span class="dock-grid-dot"></span>
+    </div>
+  </aside>
+
+  <!-- ============================================
+       Linux Desktop: Scattered files
+       ============================================ -->
+  <div class="desktop-files">
+    <!-- Column 1 (rightmost) -->
+    <div class="desktop-file" data-id="results" style="top: 4.6%; right: 2.2%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#4ba425" width="36" height="40" x="6" y="4" rx="4"/><rect fill="#dff6d4" width="24" height="3" x="12" y="12" rx="1"/><rect fill="#dff6d4" width="24" height="3" x="12" y="18" rx="1"/><rect fill="#dff6d4" width="24" height="3" x="12" y="24" rx="1"/><rect fill="#dff6d4" width="24" height="3" x="12" y="30" rx="1"/><rect fill="#dff6d4" width="24" height="3" x="12" y="36" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">results.csv</span>
+    </div>
+    <div class="desktop-file" data-id="paper" style="top: 17.2%; right: 2.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#e53935" width="32" height="40" x="8" y="4" rx="3"/><rect fill="#ffffff" width="20" height="2" x="14" y="12" rx="1"/><rect fill="#ffffff" width="20" height="2" x="14" y="18" rx="1"/><rect fill="#ffffff" width="14" height="2" x="14" y="24" rx="1"/><rect fill="#ffffff" width="20" height="2" x="14" y="30" rx="1"/><rect fill="#ffffff" width="16" height="2" x="14" y="36" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">paper.pdf</span>
+    </div>
+    <div class="desktop-file" data-id="run" style="top: 29.9%; right: 2.2%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#3d3846" width="36" height="40" x="6" y="4" rx="4"/><path fill="none" stroke="#33d17a" stroke-width="3" d="M14 18l6 6-6 6"/><rect fill="#33d17a" width="10" height="3" x="24" y="28" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">run.sh</span>
+    </div>
+    <div class="desktop-file" data-id="env" style="top: 42.5%; right: 2.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#555" width="36" height="40" x="6" y="4" rx="4"/><rect fill="#f1c40f" width="8" height="2" x="12" y="14" rx="1"/><rect fill="#abb2bf" width="14" height="2" x="22" y="14" rx="1"/><rect fill="#f1c40f" width="12" height="2" x="12" y="20" rx="1"/><rect fill="#abb2bf" width="10" height="2" x="26" y="20" rx="1"/><rect fill="#f1c40f" width="6" height="2" x="12" y="26" rx="1"/><rect fill="#abb2bf" width="16" height="2" x="20" y="26" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">.env</span>
+    </div>
+    <!-- Column 2 -->
+    <div class="desktop-file" data-id="osharm" style="top: 5.2%; right: 10.2%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><path fill="#1565c0" d="M6 12v28c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V12c0-2.2-1.8-4-4-4H22l-4-4H10c-2.2 0-4 1.8-4 4z"/><rect fill="#90caf9" x="9" y="16" width="30" height="24" rx="1"/><path fill="#1e88e5" d="M6 20v20c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V20c0-1.1-0.9-2-2-2H8c-1.1 0-2 0.9-2 2z"/><rect fill="#42a5f5" x="6" y="18" width="36" height="3"/><circle fill="#FF9800" cx="36" cy="36" r="7"/><rect fill="#fff" x="35" y="30" width="2" height="6" rx="1"/><circle fill="#fff" cx="36" cy="39" r="1.5"/></svg>
+      </div>
+      <span class="desktop-file-label">os-harm/</span>
+    </div>
+    <div class="desktop-file" data-id="notes" style="top: 17.8%; right: 10.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#e4e4e4" width="32" height="40" x="8" y="4" rx="3"/><rect fill="#bbb" width="20" height="2" x="14" y="12" rx="1"/><rect fill="#bbb" width="16" height="2" x="14" y="18" rx="1"/><rect fill="#bbb" width="20" height="2" x="14" y="24" rx="1"/><rect fill="#bbb" width="12" height="2" x="14" y="30" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">notes.md</span>
+    </div>
+    <div class="desktop-file" data-id="analysis" style="top: 30.5%; right: 10.2%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><path fill="#e4e4e4" d="M10 4h18l12 12v28c0 1.1-0.9 2-2 2H10c-1.1 0-2-0.9-2-2V6c0-1.1 0.9-2 2-2z"/><path fill="#bdbdbd" d="M28 4l12 12h-10c-1.1 0-2-0.9-2-2z"/><g transform="translate(12,16)"><path fill="#3084e0" d="M9.86 2A2.86 2.86 0 0 0 7 4.86v1.68h4.29c.39 0 .71.57.71.96H4.86A2.86 2.86 0 0 0 2 10.36v3.78a2.86 2.86 0 0 0 2.86 2.86h1.18v-2.68a2.85 2.85 0 0 1 2.85-2.86h5.25c1.58 0 2.86-1.27 2.86-2.85V4.86A2.86 2.86 0 0 0 14.14 2zm-.72 1.61c.4 0 .72.12.72.71s-.32.89-.72.89-.71-.3-.71-.89.32-.71.71-.71z"/><path fill="#ffa923" d="M17.96 7v2.68a2.85 2.85 0 0 1-2.85 2.86H9.86A2.85 2.85 0 0 0 7 15.39v3.75a2.86 2.86 0 0 0 2.86 2.86h4.28A2.86 2.86 0 0 0 17 19.14v-1.68h-4.29c-.39 0-.71-.57-.71-.96h7.14A2.86 2.86 0 0 0 22 13.64V9.86A2.86 2.86 0 0 0 19.14 7zm-3.1 11.79c.39 0 .71.3.71.89s-.32.71-.71.71-.72-.12-.72-.71.32-.89.72-.89z"/></g></svg>
+      </div>
+      <span class="desktop-file-label">analysis.py</span>
+    </div>
+    <div class="desktop-file" data-id="config" style="top: 43.1%; right: 10.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#78909c" width="36" height="40" x="6" y="4" rx="4"/><text fill="#fff" font-family="monospace" font-size="10" x="11" y="22">{</text><text fill="#f1c40f" font-family="monospace" font-size="8" x="16" y="31">"k"</text><text fill="#fff" font-family="monospace" font-size="10" x="11" y="40">}</text></svg>
+      </div>
+      <span class="desktop-file-label">config.json</span>
+    </div>
+    <!-- Column 3 -->
+    <div class="desktop-file" data-id="screenshot" style="top: 5.7%; right: 18.3%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#009688" width="36" height="28" x="6" y="10" rx="3"/><rect fill="#4db6ac" width="30" height="20" x="9" y="14" rx="1"/><circle fill="#80cbc4" cx="24" cy="24" r="6"/></svg>
+      </div>
+      <span class="desktop-file-label">screenshot.png</span>
+    </div>
+    <div class="desktop-file" data-id="venv" style="top: 18.4%; right: 18.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><path fill="#1565c0" d="M6 12v28c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V12c0-2.2-1.8-4-4-4H22l-4-4H10c-2.2 0-4 1.8-4 4z"/><rect fill="#42a5f5" width="30" height="4" x="9" y="18" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">venv/</span>
+    </div>
+    <div class="desktop-file" data-id="log" style="top: 31.0%; right: 18.3%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#37474f" width="36" height="40" x="6" y="4" rx="4"/><rect fill="#4fc3f7" width="20" height="2" x="12" y="14" rx="1"/><rect fill="#81c784" width="16" height="2" x="12" y="20" rx="1"/><rect fill="#f44336" width="22" height="2" x="12" y="26" rx="1"/><rect fill="#4fc3f7" width="14" height="2" x="12" y="32" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">control_log.jsonl</span>
+    </div>
+    <div class="desktop-file" data-id="readme" style="top: 43.7%; right: 18.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#e4e4e4" width="32" height="40" x="8" y="4" rx="3"/><rect fill="#333" width="18" height="3" x="15" y="12" rx="1"/><rect fill="#999" width="22" height="2" x="13" y="20" rx="1"/><rect fill="#999" width="18" height="2" x="13" y="25" rx="1"/><rect fill="#999" width="22" height="2" x="13" y="30" rx="1"/><rect fill="#999" width="14" height="2" x="13" y="35" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">README.md</span>
+    </div>
+    <!-- App icons on desktop (Papirus 64x64) -->
+    <div class="desktop-file" data-id="telegram-app" style="top: 56.3%; right: 2.9%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle style="fill:#28a4e2" cx="32" cy="32" r="28"/><path style="fill:#e1f5fe" d="m41.862 45.781c0.539-1.033 3.636-18.692 4.079-23.257 0.479-4.523-2.018-3.682-4.316-2.918-5.638 1.881-23.462 9.507-28.341 12.023-1.201 0.492-1.72 1.327-0.846 2.05 0.752 0.613 3.506 1.454 5.727 1.881 1.893 0.567 3.363 0.024 4.721-0.733 3.262-1.911 12.982-7.989 13.505-8.328s1.096 0.29 0.803 0.594c-0.293 0.304-7.177 6.405-9.437 9.163-1.197 1.517-1.161 2.326 0.069 3.283 2.759 2.138 10.132 7.013 11.229 7.308 1.399 0.376 2.218 0.064 2.809-1.067z"/></svg>
+      </div>
+      <span class="desktop-file-label">Telegram</span>
+    </div>
+    <div class="desktop-file" data-id="spotify-app" style="top: 56.3%; right: 10.6%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="#1ed760" d="M60 32C60 16.5 47.5 4 32 4S4 16.5 4 32s12.5 28 28 28 28-12.5 28-28z"/><path style="fill:none;stroke:#3f3f3f;stroke-width:5;stroke-linecap:round" d="M15.5 23.5C23 20.5 39 20.5 49.5 26.5"/><path style="fill:none;stroke:#3f3f3f;stroke-width:4;stroke-linecap:round" d="M17 32C24 30 40 31 46 35"/><path style="fill:none;stroke:#3f3f3f;stroke-width:4;stroke-linecap:round" d="M18 41C24 39.5 36 39.5 43 43"/></svg>
+      </div>
+      <span class="desktop-file-label">Spotify</span>
+    </div>
+    <div class="desktop-file" data-id="calc-app" style="top: 56.3%; right: 18.6%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#e4e4e4" d="M15.2 4H48.8C51.119 4 53 5.892 53 8.226V55.774C53 58.108 51.119 60 48.8 60H15.2C12.881 60 11 58.108 11 55.774V8.226C11 5.892 12.881 4 15.2 4z"/><path style="fill:#3faf7f" d="M19 18H45C46.106 18 47 17.105 47 16v-4c0-1.105-0.894-2-2-2H19c-1.105 0-2 0.895-2 2v4c0 1.105 0.895 2 2 2z"/><circle style="fill:#858585" cx="21" cy="28" r="4"/><circle style="fill:#858585" cx="32" cy="28" r="4"/><circle style="fill:#858585" cx="43" cy="28" r="4"/><circle style="fill:#4f4f4f" cx="21" cy="39" r="4"/><circle style="fill:#4f4f4f" cx="32" cy="39" r="4"/><path style="fill:#ff7800" d="m43 35c2.21 0 4 1.653 4 3.694V50.306C47 52.347 45.21 54 43 54s-4-1.653-4-3.694V38.694C39 36.653 40.79 35 43 35z"/><circle style="fill:#4f4f4f" cx="21" cy="50" r="4"/><circle style="fill:#4f4f4f" cx="32" cy="50" r="4"/></svg>
+      </div>
+      <span class="desktop-file-label">Calculator</span>
+    </div>
+    <div class="desktop-file" data-id="gimp-app" style="top: 69.0%; right: 2.9%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#645b44;fill-rule:evenodd" d="M54.198 6.012C53.748 5.941 53.345 6.195 53.102 6.484 52.859 6.773 52.691 7.131 52.544 7.583 52.291 8.364 51.359 11.265 48 14.132 44.642 17 38.85 21.741 28.812 22c-6.104 0.072-9.814-3.546-12.248-8.369-0.607-1.204-1.564-3.447-1.564-2.019v2.207l-0.031 11.421 0.062 0.15s0.547 1.216-0.031 2.855c-0.578 1.639-3.285 4.031-8.377 5.561L6 33.991l0.118 0.656c0.282 1.59 1.408 3.22 3.07 4.889 1.662 1.669 3.888 3.357 6.479 4.883 5.183 3.052 11.821 5.464 18.271 5.577 6.45 0.113 12.76-2.145 16.935-8.401 4.175-6.255 6.212-18.193 4.544-33.741C55.362 7.428 55.268 7.063 55.099 6.744 54.931 6.425 54.647 6.095 54.198 6.024z"/><path style="fill:#ffffff;fill-rule:evenodd" d="M21 21c-1.732 0-3.472 0.572-4.797 1.75C14.876 23.928 14 25.723 14 28c0 2.278 0.876 4.072 2.202 5.249C17.527 34.428 19.267 35 21 35s3.472-0.572 4.797-1.75C27.121 32.072 28 30.28 28 28c0-2.278-0.879-4.072-2.204-5.25C24.471 21.573 22.731 21 21 21z"/><circle style="fill:#3f3f3f" cx="22" cy="29" r="3"/><path style="fill:#ffffff;fill-rule:evenodd" d="M33 21c-1.732 0-3.472 0.572-4.797 1.75C26.876 23.928 26 25.723 26 28c0 2.278 0.876 4.072 2.202 5.249C29.527 34.428 31.267 35 33 35s3.472-0.572 4.797-1.75C39.121 32.072 40 30.28 40 28c0-2.278-0.879-4.072-2.204-5.25C36.471 21.573 34.731 21 33 21z"/><circle style="fill:#3f3f3f" cx="34" cy="29" r="3"/><path style="fill:#ff9a0c" d="m48.914 49.392 1.208-2.406C45.628 43.697 37.236 40.36 37.236 40.36l-1.322 0.727s7.619 6.758 13.001 8.305z"/><path style="fill:#3f3f3f" d="m62 58c-1.603-5.209-2.172-9.345-6.362-8.977-3.376 0.297-3.613 4.927-0.124 6.205C58.876 56.459 62 58 62 58z"/></svg>
+      </div>
+      <span class="desktop-file-label">GIMP</span>
+    </div>
+    <div class="desktop-file" data-id="firefox-app" style="top: 69.0%; right: 10.6%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#248afd" d="m27 13c1.54-5.71 9.51-9 17-9 5.41 0 10.67 2.16 14 5-1.99 0.1-4.38 1-6 2 3 0.34 5.29 1.01 7 3-1.29-0.23-2.67-0.23-4 0 3.22 4.88 5.01 12.08 5 18C60 48.15 48 60 32 60S4 48 4 32c0-2.52 0.41-6.31 1.15-8.8 0.16-0.51 0.39-0.97 0.69-1.15C5.89 22.01 5.95 22 6 22c0.31 0 0.55 0.52 0.6 0.71 0.41 1.6 0.71 3.79 1.4 5.29 0-3.32 1.36-7.04 3.24-9.67 1.25-1.75 3.61-3.2 4.15-7.89 0 0 0.05-0.44 0.61-0.44 4.08 1.39 4 10 4 16 2.25 0.34 2.36-3.71 2.36-3.71C22.05 21.47 22 21 22 20c0-2 1.54-5.49 5-7z"/><path style="fill:#0259bb" d="M5.71 22.33C5.29 24.1 5 26.01 5 28c0 6.25 2.41 12.33 8.5 18.01C11.88 44 10 40.32 10 36c0-3.25 0.75-6.78 3.44-9.79 0.15-0.16 0.3-0.21 0.56-0.21 0.31 0 0.65 0.32 0.66 0.74C15.18 41.29 26 49 40 49c-4.48 0-17.37-5.71-7.49-7.64C37.67 40.36 46 38 46 32 46 19.7 39 16 32 16c-4.29 0-8.8 3.18-9.64 6.29 0.39 1.34-1.3 3.87-2.36 3.71 0-6 0.08-14.61-4-16-0.54 0-0.61 0.44-0.61 0.44-0.54 4.69-2.9 6.13-4.15 7.89C9.36 20.96 8 24.33 8 28c-0.69-1.5-0.99-3.69-1.4-5.29C6.55 22.53 6.3 22 6 22c-0.17 0-0.25 0.15-0.29 0.33z"/><path style="fill:#d6d6d6" d="m32 43c7 0 14-5 14-11 0-2.51-0.64-4.98-2-7-2.43-3.61-6.87-6-12-6-5.22 0-9.6 2.28-12 6-1.28 1.98-2 4.57-2 7 0 11.59 10 17 22 17-0.75-0.09-5.33-0.26-8.49-4-0.29-0.34-0.51-0.63-0.51-1 0-0.59 0.55-1 1-1z"/><path style="fill:#e4e4e4" d="m34 35c-0.64 0.64-1.24 1.01-2 1-0.74-0.01-1.39-0.39-2-1l-10-10c3-4.65 8-6 12-6 4 0 9 1.58 12 6z"/></svg>
+      </div>
+      <span class="desktop-file-label">Firefox</span>
+    </div>
+    <div class="desktop-file" data-id="writer-app" style="top: 69.0%; right: 18.6%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#1b83d4" d="m18 4h20l16 16v32c0 4.432-3.568 8-8 8H18c-4.432 0-8-3.568-8-8V12c0-4.432 3.568-8 8-8z"/><path style="fill:#3b9ce6" d="M42 4H54V16Z"/><rect style="fill:#7ad2f9" width="14" height="10" x="34" y="24" rx="2" ry="2"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="24" rx="1" ry="1"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="28" rx="1" ry="1"/><rect style="fill:#ffffff" width="14" height="2" x="16" y="32" rx="1" ry="1"/><rect style="fill:#ffffff" width="32" height="2" x="16" y="38" rx="1" ry="1"/><rect style="fill:#ffffff" width="32" height="2" x="16" y="42" rx="1" ry="1"/></svg>
+      </div>
+      <span class="desktop-file-label">Writer</span>
+    </div>
+    <!-- Left-side desktop icons -->
+    <!-- Left Column 1 -->
+    <div class="desktop-file" data-id="control-dir" style="top: 5.2%; left: 6.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><path fill="#1565c0" d="M6 12v28c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V12c0-2.2-1.8-4-4-4H22l-4-4H10c-2.2 0-4 1.8-4 4z"/><rect fill="#90caf9" x="9" y="16" width="30" height="24" rx="1"/><path fill="#1e88e5" d="M6 20v20c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V20c0-1.1-0.9-2-2-2H8c-1.1 0-2 0.9-2 2z"/><rect fill="#42a5f5" x="6" y="18" width="36" height="3"/><circle fill="#4caf50" cx="36" cy="36" r="7"/><path fill="none" stroke="#fff" stroke-width="2" d="M33 36l2.5 2.5L39 34"/></svg>
+      </div>
+      <span class="desktop-file-label">control/</span>
+    </div>
+    <div class="desktop-file" data-id="requirements" style="top: 17.8%; left: 6.2%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#e4e4e4" width="32" height="40" x="8" y="4" rx="3"/><rect fill="#4caf50" width="20" height="2" x="14" y="12" rx="1"/><rect fill="#999" width="16" height="2" x="14" y="17" rx="1"/><rect fill="#4caf50" width="14" height="2" x="14" y="22" rx="1"/><rect fill="#999" width="18" height="2" x="14" y="27" rx="1"/><rect fill="#4caf50" width="12" height="2" x="14" y="32" rx="1"/><rect fill="#999" width="20" height="2" x="14" y="37" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">requirements.txt</span>
+    </div>
+    <div class="desktop-file" data-id="makefile" style="top: 30.5%; left: 6.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#3d3846" width="36" height="40" x="6" y="4" rx="4"/><rect fill="#e4e4e4" width="16" height="2" x="12" y="14" rx="1"/><rect fill="#62c9ea" width="22" height="2" x="12" y="20" rx="1"/><rect fill="#f1c40f" width="8" height="2" x="16" y="26" rx="1"/><rect fill="#62c9ea" width="18" height="2" x="12" y="32" rx="1"/><rect fill="#f1c40f" width="12" height="2" x="16" y="38" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">Makefile</span>
+    </div>
+    <div class="desktop-file" data-id="plots-dir" style="top: 43.1%; left: 6.2%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><path fill="#1565c0" d="M6 12v28c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V12c0-2.2-1.8-4-4-4H22l-4-4H10c-2.2 0-4 1.8-4 4z"/><rect fill="#90caf9" x="9" y="16" width="30" height="24" rx="1"/><path fill="#1e88e5" d="M6 20v20c0 2.2 1.8 4 4 4h28c2.2 0 4-1.8 4-4V20c0-1.1-0.9-2-2-2H8c-1.1 0-2 0.9-2 2z"/><rect fill="#42a5f5" x="6" y="18" width="36" height="3"/><rect fill="#e8f5e9" x="28" y="28" width="4" height="12" rx="1"/><rect fill="#c8e6c9" x="33" y="32" width="4" height="8" rx="1"/><rect fill="#a5d6a7" x="23" y="34" width="4" height="6" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">plots/</span>
+    </div>
+    <!-- Left Column 2 -->
+    <div class="desktop-file" data-id="train-log" style="top: 5.7%; left: 14.3%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#37474f" width="36" height="40" x="6" y="4" rx="4"/><rect fill="#81c784" width="18" height="2" x="12" y="14" rx="1"/><rect fill="#81c784" width="14" height="2" x="12" y="20" rx="1"/><rect fill="#f44336" width="20" height="2" x="12" y="26" rx="1"/><rect fill="#81c784" width="16" height="2" x="12" y="32" rx="1"/><rect fill="#f1c40f" width="22" height="2" x="12" y="38" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">train.log</span>
+    </div>
+    <div class="desktop-file" data-id="eval-py" style="top: 18.4%; left: 14.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><path fill="#e4e4e4" d="M10 4h18l12 12v28c0 1.1-0.9 2-2 2H10c-1.1 0-2-0.9-2-2V6c0-1.1 0.9-2 2-2z"/><path fill="#bdbdbd" d="M28 4l12 12h-10c-1.1 0-2-0.9-2-2z"/><g transform="translate(12,16)"><path fill="#3084e0" d="M9.86 2A2.86 2.86 0 0 0 7 4.86v1.68h4.29c.39 0 .71.57.71.96H4.86A2.86 2.86 0 0 0 2 10.36v3.78a2.86 2.86 0 0 0 2.86 2.86h1.18v-2.68a2.85 2.85 0 0 1 2.85-2.86h5.25c1.58 0 2.86-1.27 2.86-2.85V4.86A2.86 2.86 0 0 0 14.14 2zm-.72 1.61c.4 0 .72.12.72.71s-.32.89-.72.89-.71-.3-.71-.89.32-.71.71-.71z"/><path fill="#ffa923" d="M17.96 7v2.68a2.85 2.85 0 0 1-2.85 2.86H9.86A2.85 2.85 0 0 0 7 15.39v3.75a2.86 2.86 0 0 0 2.86 2.86h4.28A2.86 2.86 0 0 0 17 19.14v-1.68h-4.29c-.39 0-.71-.57-.71-.96h7.14A2.86 2.86 0 0 0 22 13.64V9.86A2.86 2.86 0 0 0 19.14 7zm-3.1 11.79c.39 0 .71.3.71.89s-.32.71-.71.71-.72-.12-.72-.71.32-.89.72-.89z"/></g></svg>
+      </div>
+      <span class="desktop-file-label">eval.py</span>
+    </div>
+    <div class="desktop-file" data-id="docker-yml" style="top: 31.0%; left: 14.3%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#0db7ed" width="36" height="40" x="6" y="4" rx="4"/><rect fill="#fff" x="12" y="12" width="6" height="5" rx="1"/><rect fill="#fff" x="20" y="12" width="6" height="5" rx="1"/><rect fill="#fff" x="28" y="12" width="6" height="5" rx="1"/><rect fill="#fff" x="12" y="19" width="6" height="5" rx="1"/><rect fill="#fff" x="20" y="19" width="6" height="5" rx="1"/><rect fill="#fff" x="28" y="19" width="6" height="5" rx="1"/><rect fill="#fff" x="20" y="26" width="6" height="5" rx="1"/><path fill="none" stroke="#fff" stroke-width="1.5" d="M14 34c0 0 4-2 10-2s10 2 10 2"/></svg>
+      </div>
+      <span class="desktop-file-label">docker-compose.yml</span>
+    </div>
+    <div class="desktop-file" data-id="todo-txt" style="top: 43.7%; left: 14.6%;">
+      <div class="desktop-file-icon">
+        <svg viewBox="0 0 48 48"><rect fill="#e4e4e4" width="32" height="40" x="8" y="4" rx="3"/><rect fill="#4caf50" width="4" height="4" x="13" y="12" rx="1"/><rect fill="#999" width="14" height="2" x="20" y="13" rx="1"/><rect fill="#4caf50" width="4" height="4" x="13" y="20" rx="1"/><rect fill="#999" width="10" height="2" x="20" y="21" rx="1"/><rect fill="#bbb" width="4" height="4" x="13" y="28" rx="1"/><rect fill="#999" width="16" height="2" x="20" y="29" rx="1"/><rect fill="#bbb" width="4" height="4" x="13" y="36" rx="1"/><rect fill="#999" width="12" height="2" x="20" y="37" rx="1"/></svg>
+      </div>
+      <span class="desktop-file-label">TODO.txt</span>
+    </div>
+    <!-- Left-side app icons -->
+    <div class="desktop-file" data-id="thunderbird-app" style="top: 56.3%; left: 6.6%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g transform="translate(4,5) scale(2.33)"><path style="fill:#0A84FF" d="M9.948 4.444h-.005c-1.92.788-2.126 2.55-1.817 3.499v.02C9.236 7.18 10.658 6.76 12 6.76c3.26 0 5.902 2.156 5.902 4.815 0 2.66-2.643 4.816-5.902 4.816l-.083-.002c-.155-.006-.354-.013-.435.118-.096.156.116.397.238.536 1.274 1.441 3.123 1.622 3.608 1.67l.076.008c-4.281.414-9.304-2.32-9.306-7.076 0-1.12.414-2.073 1.075-2.83l-.005-.002h-.003C7.31 6.38 6.376 3.47 4.629 2.898c-.124-.04-.246.054-.262.183-.23 1.924-.727 2.59-1.264 3.31-.805 1.08-1.39 2.328-1.365 3.698a10.99 10.99 0 0 1-.705-1.91c-.024-.09-.17-.365-.333-.272-.13.072-.227.274-.296.485A12.137 12.137 0 0 0 0 11.489c0 6.536 5.475 12 12 12 6.627 0 12-5.372 12-12 0-2.526-.781-4.87-2.115-6.805l.167-.002c.518 0 1.024.045 1.51.129-.734-.816-1.724-1.475-2.877-1.904a8.54 8.54 0 0 1 2.494-.495c-1.426-1.166-3.508-1.9-5.827-1.9-3.355 0-6.648 1.29-7.404 3.93zm.682 9.166c-.87-.905-3.473-3.91-3.473-3.91l.202.01 4.075 3.042c.305.223.74.22 1.043-.004l3.996-3.034.212-.018s-2.518 2.935-3.483 3.9c-.964.968-1.703.919-2.572.014zm2.774-10.083s.055.625-.576.824c-.722.227-1.042-.38-1.042-.38s.09-.417.676-.61c.626-.206.942.166.942.166z"/></g></svg>
+      </div>
+      <span class="desktop-file-label">Thunderbird</span>
+    </div>
+    <div class="desktop-file" data-id="slack-app" style="top: 56.3%; left: 14.3%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle style="fill:#e4e4e4" cx="32" cy="32" r="28"/><g transform="translate(14,14) scale(0.6)"><path d="M22,12 a6,6 0 1 1 6,-6 v6z M22,16 a6,6 0 0 1 0,12 h-16 a6,6 0 1 1 0,-12" fill="#36C5F0"/><path d="M48,22 a6,6 0 1 1 6,6 h-6z M32,6 a6,6 0 1 1 12,0v16a6,6 0 0 1 -12,0z" fill="#2EB67D"/><path d="M38,48 a6,6 0 1 1 -6,6 v-6z M54,32 a6,6 0 0 1 0,12 h-16 a6,6 0 1 1 0,-12" fill="#ECB22E"/><path d="M12,38 a6,6 0 1 1 -6,-6 h6z M16,38 a6,6 0 1 1 12,0v16a6,6 0 0 1 -12,0z" fill="#E01E5A"/></g></svg>
+      </div>
+      <span class="desktop-file-label">Slack</span>
+    </div>
+    <div class="desktop-file" data-id="chromium-app-left" style="top: 69.0%; left: 6.6%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#6199f6" d="m8.7 16.504c-0.482 0.732-0.927 1.516-1.379 2.293a28 28 0 0 0-3.32 13.203 28 28 0 0 0 28 28 28 28 0 0 0 0.43-0.016l13.258-22.047c-1.062 1.73-5.487 3.945-7.375 5.035-6.042 3.488-13.715 1.234-17.203-4.809l-12.41-21.66z"/><path style="fill:#396bd7" d="M19.145 37.731 7.766 18.02C11.864 10.926 18.414 6.714 24.512 5.02 27.31 4.248 29.502 4.059 32 4c3.325 0 14.87 0.822 22.688 11.649 0.545 0.758 1.052 1.543 1.519 2.351H32c-2.669 0.299-4.189 1.706-5.058 3.711l9.504 16.465-17.301 9.555"/><path style="fill:#a2c2fa" d="M43.375 40.281 32 59.984c0.075 0.002 0.149 0.008 0.223 0.008 0.387-0.006 0.774-0.021 1.16-0.043 0.224-0.01 0.448-0.012 0.672-0.027 0.882-0.065 1.761-0.172 2.633-0.321l0.172-0.031C50.241 57.212 59.998 45.587 60 32c-0.013-4.919-1.321-9.747-3.793-14H32.032c-0.031 0 4.444 1.996 6.332 3.086 4.824 2.786 5.328 12.735 5.339 16.762l0.809 0.469"/><circle style="opacity:0.2" cx="32" cy="33" r="14"/><circle style="fill:#ffffff" cx="32" cy="32" r="14"/><circle style="fill:#4688f4" cx="32" cy="32" r="11"/></svg>
+      </div>
+      <span class="desktop-file-label">Chromium</span>
+    </div>
+    <div class="desktop-file" data-id="vscode-app-left" style="top: 69.0%; left: 14.3%;">
+      <div class="desktop-file-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#0072b0" d="M58.019 9.932L46.488 4.348C45.153 3.702 43.558 3.974 42.511 5.028L4.761 39.025c-1.015 0.931-1.014 2.539 0.003 3.469l3.083 2.819c0.831 0.76 2.083 0.816 2.978 0.133L56.284 11.381c1.525-1.164 3.716-0.07 3.716 1.856v-0.135c0-1.351-0.77-2.583-1.98-3.17z"/><path style="fill:#008eda" d="m58.019 54.068-11.531 5.584c-1.335 0.646-2.93 0.374-3.977-0.68L4.761 22.913c-1.015-0.931-1.014-2.539 0.003-3.469l3.083-2.819c0.832-0.761 2.083-0.816 2.978-0.133l45.459 36.128c1.525 1.164 3.716 0.07 3.716-1.856v0.135c0 1.351-0.77 2.583-1.98 3.17z"/><path style="fill:#1eacf8" d="m46.489 59.653c-1.335 0.646-2.93 0.373-3.978-0.681 1.291 1.298 3.498 0.379 3.498-1.457V6.485c0-1.836-2.207-2.756-3.498-1.457 1.048-1.054 2.643-1.327 3.978-0.681L58.018 9.924C59.23 10.51 60 11.742 60 13.094v37.812c0 1.352-0.77 2.584-1.982 3.17z"/></svg>
+      </div>
+      <span class="desktop-file-label">VS Code</span>
+    </div>
+  </div>
+
+  <!-- ============================================
+       Background Desktop Windows (scroll-reactive)
+       data-scroll-section = which page section triggers visibility
+       ============================================ -->
+
+  <!-- GROUP 1: Visible during hero/abstract -->
+  <div class="desktop-bg-window" data-win-id="terminal" data-scroll-section="hero" style="top: 4.4%; left: 5.3%; width: clamp(300px, 29vw, 420px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">Terminal - run.py</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body">
+      <div><span style="color:#33d17a">ashton@ubuntu</span>:<span style="color:#729fcf">~/look-before-you-click</span>$ python run.py --baseline B3</div>
+      <div style="color:#8abeb7">[INFO] Loading config: configs/b3_selective.json</div>
+      <div style="color:#8abeb7">[INFO] VM snapshot restored: init_state</div>
+      <div style="color:#8abeb7">[INFO] Agent: o4-mini | Reviewer: gpt-5.4-mini</div>
+      <div style="color:#f1c40f">[ROUTE] Action: click "Send" -> CRITICAL (send/submit/share)</div>
+      <div style="color:#e74c3c">[REVIEW] Decision: BLOCK | Reason: injection detected in email body</div>
+      <div style="color:#33d17a">[SAFE] Action: click "Reply" -> SAFE (navigation)</div>
+      <div><span style="color:#33d17a">ashton@ubuntu</span>:<span style="color:#729fcf">~/look-before-you-click</span>$ _</div>
+    </div>
+  </div>
+
+  <div class="desktop-bg-window" data-win-id="editor" data-scroll-section="hero" style="top: 4.4%; right: 1.4%; width: clamp(280px, 26vw, 380px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">critical_router.py - VS Code</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body">
+      <div><span class="syntax-kw">def</span> <span class="syntax-fn">route_action</span><span class="syntax-op">(</span>action<span class="syntax-op">,</span> a11y_tree<span class="syntax-op">):</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="syntax-cm"># Classify action into family</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;family <span class="syntax-op">=</span> <span class="syntax-fn">classify_family</span><span class="syntax-op">(</span>action<span class="syntax-op">)</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="syntax-kw">if</span> family <span class="syntax-kw">in</span> CRITICAL_FAMILIES<span class="syntax-op">:</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="syntax-kw">return</span> <span class="syntax-str">"CRITICAL"</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="syntax-kw">return</span> <span class="syntax-str">"SAFE"</span></div>
+    </div>
+  </div>
+
+  <!-- GROUP 2: Visible during threat-models/protocol -->
+  <div class="desktop-bg-window" data-win-id="filemanager" data-scroll-section="threat" style="top: 32.2%; left: 3.5%; width: clamp(260px, 24vw, 340px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">Files - look-before-you-click</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body bg-win-body--light">
+      <div class="bg-win-file-row"><svg viewBox="0 0 24 24"><path fill="#1e88e5" d="M2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2H4c-1.1 0-2 .9-2 2z"/></svg> control/</div>
+      <div class="bg-win-file-row"><svg viewBox="0 0 24 24"><path fill="#1e88e5" d="M2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2H4c-1.1 0-2 .9-2 2z"/></svg> analysis/</div>
+      <div class="bg-win-file-row"><svg viewBox="0 0 24 24"><path fill="#1e88e5" d="M2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2H4c-1.1 0-2 .9-2 2z"/></svg> configs/</div>
+      <div class="bg-win-file-row"><svg viewBox="0 0 24 24"><rect fill="#e4e4e4" width="16" height="20" x="4" y="2" rx="2"/><rect fill="#bbb" width="10" height="1.5" x="7" y="7" rx="0.5"/><rect fill="#bbb" width="8" height="1.5" x="7" y="11" rx="0.5"/></svg> run.py</div>
+      <div class="bg-win-file-row"><svg viewBox="0 0 24 24"><rect fill="#e4e4e4" width="16" height="20" x="4" y="2" rx="2"/><rect fill="#bbb" width="10" height="1.5" x="7" y="7" rx="0.5"/><rect fill="#bbb" width="8" height="1.5" x="7" y="11" rx="0.5"/></svg> lib_run_single.py</div>
+    </div>
+  </div>
+
+  <div class="desktop-bg-window" data-win-id="sysmon" data-scroll-section="threat" style="top: 31.1%; right: 0; width: clamp(240px, 22vw, 320px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">System Monitor</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body" style="min-height:140px; padding:8px 12px;">
+      <div style="color:#aaa;font-size:10px;margin-bottom:6px;">CPU History</div>
+      <svg viewBox="0 0 300 60" style="width:100%;height:50px;">
+        <rect fill="#1a1a2e" width="300" height="60" rx="3"/>
+        <polyline fill="none" stroke="#00e441" stroke-width="1.5" points="0,45 20,42 40,38 60,40 80,25 100,30 120,20 140,28 160,15 180,22 200,18 220,35 240,30 260,25 280,20 300,22"/>
+        <polyline fill="none" stroke="#4fc3f7" stroke-width="1.5" points="0,50 20,48 40,46 60,47 80,40 100,42 120,38 140,44 160,35 180,40 200,37 220,45 240,42 260,39 280,36 300,38"/>
+      </svg>
+      <div style="display:flex;gap:16px;margin-top:4px;">
+        <span style="color:#00e441;font-size:9px;">CPU1: 34%</span>
+        <span style="color:#4fc3f7;font-size:9px;">CPU2: 28%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- GROUP 3: Visible during results/router -->
+  <div class="desktop-bg-window" data-win-id="results-term" data-scroll-section="results" style="bottom: 28.9%; left: 5.3%; width: clamp(300px, 28vw, 400px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">Terminal - aggregate.py</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body" style="min-height:160px;">
+      <div><span style="color:#33d17a">ashton@ubuntu</span>:<span style="color:#729fcf">~/analysis</span>$ python aggregate.py --cohort final_corrected</div>
+      <div style="color:#8abeb7">[INFO] Loading 24 episodes from output/final_corrected/</div>
+      <div style="color:#8abeb7">[INFO] B0 (no monitor): safety=0.417, usefulness=1.000</div>
+      <div style="color:#8abeb7">[INFO] B3 (selective):   safety=0.917, usefulness=1.000</div>
+      <div style="color:#f1c40f">[INFO] B4 (full review): safety=0.833, usefulness=0.917</div>
+      <div style="color:#33d17a">[DONE] Results written to output/aggregate_report.json</div>
+      <div><span style="color:#33d17a">ashton@ubuntu</span>:<span style="color:#729fcf">~/analysis</span>$ _</div>
+    </div>
+  </div>
+
+  <div class="desktop-bg-window" data-win-id="csv-viewer" data-scroll-section="results" style="bottom: 28.9%; right: 1.4%; width: clamp(260px, 25vw, 360px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">results.csv - LibreOffice Calc</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body bg-win-body--light" style="min-height:140px;font-family:var(--font-mono);font-size:10px;padding:8px;">
+      <div style="display:grid;grid-template-columns:60px 80px 60px 60px;gap:2px 8px;color:#333;">
+        <span style="font-weight:700;border-bottom:1px solid #ddd;">baseline</span><span style="font-weight:700;border-bottom:1px solid #ddd;">router</span><span style="font-weight:700;border-bottom:1px solid #ddd;">safety</span><span style="font-weight:700;border-bottom:1px solid #ddd;">useful</span>
+        <span>B0</span><span>none</span><span style="color:#cc0000;">0.417</span><span style="color:#4e9a06;">1.000</span>
+        <span>B1</span><span>all-critical</span><span style="color:#4e9a06;">0.917</span><span style="color:#cc0000;">0.667</span>
+        <span>B2</span><span>random-50%</span><span style="color:#f1c40f;">0.750</span><span style="color:#4e9a06;">0.917</span>
+        <span>B3</span><span>selective</span><span style="color:#4e9a06;">0.917</span><span style="color:#4e9a06;">1.000</span>
+        <span>B4</span><span>full-review</span><span style="color:#f1c40f;">0.833</span><span style="color:#f1c40f;">0.917</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- GROUP 4: Visible during discussion/conclusion -->
+  <div class="desktop-bg-window" data-win-id="notes-app" data-scroll-section="discussion" style="bottom: 3.3%; left: 3.5%; width: clamp(260px, 25vw, 360px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">Text Editor - research_notes.md</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body bg-win-body--light" style="min-height:150px;font-size:12px;line-height:1.6;">
+      <div style="font-weight:600;margin-bottom:8px;color:#333;">Research Notes</div>
+      <div style="color:#555;">- Sparse review outperforms full review (B3 > B4)</div>
+      <div style="color:#555;">- Top 3 action families cover 91% of critical actions</div>
+      <div style="color:#555;">- Reviewer false positives cause more harm than gaps</div>
+      <div style="color:#555;">- Legibility puzzle: more review can reduce safety</div>
+      <div style="color:#999;margin-top:8px;font-size:10px;">Last edited: Mar 23, 2026</div>
+    </div>
+  </div>
+
+  <div class="desktop-bg-window" data-win-id="browser" data-scroll-section="discussion" style="bottom: 3.3%; right: 0; width: clamp(280px, 26vw, 380px);">
+    <div class="bg-win-titlebar">
+      <span class="bg-win-title">Chromium - arXiv</span>
+      <div class="bg-win-controls"><span class="bg-win-btn">&#8722;</span><span class="bg-win-btn">&#9723;</span><span class="bg-win-btn">&#10005;</span></div>
+    </div>
+    <div class="bg-win-body bg-win-body--light" style="min-height:150px;padding:0;">
+      <div style="background:#f5f5f5;padding:4px 10px;font-size:10px;color:#666;border-bottom:1px solid #e0e0e0;display:flex;align-items:center;gap:6px;">
+        <span style="background:#e0e0e0;border-radius:8px;padding:2px 8px;">arxiv.org/abs/2506.14866</span>
+      </div>
+      <div style="padding:12px;font-size:11px;line-height:1.5;">
+        <div style="font-weight:700;color:#333;margin-bottom:4px;">OS-Harm: Measuring Safety of Computer Use Agents</div>
+        <div style="color:#666;font-size:10px;">Kuntz, T. et al. (2025)</div>
+        <div style="color:#555;margin-top:8px;">Abstract: We present OS-Harm, a benchmark for evaluating the safety of autonomous computer-use agents operating in real desktop environments...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       Top Panel Nav
+       ============================================ -->
+  <nav class="top-panel">
+    <span class="top-panel-title"><a href="https://apartresearch.com/" target="_blank" style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"><img src="images/apart-icon.png" alt="" style="height: 16px; width: auto; display: block;">With Apart Research</a></span>
+    <span class="top-panel-clock" id="panel-clock"></span>
+    <div class="top-panel-tray">
+      <!-- WiFi (Adwaita network-wireless-signal-good-symbolic) -->
+      <svg viewBox="0 0 16 16"><path d="m8 1.992c-2.617 0-5.238 0.934-7.195 2.809l-0.496 0.48c-0.398 0.379-0.41 1.012-0.031 1.41 0.383 0.398 1.016 0.41 1.414 0.031l0.5-0.477c3.086-2.957 8.531-2.957 11.617 0l0.5 0.477c0.398 0.379 1.031 0.367 1.414-0.031 0.379-0.398 0.367-1.031-0.031-1.41l-0.496-0.484c-1.957-1.871-4.578-2.805-7.195-2.805zm-0.031 4.008c-1.57 0.012-3.129 0.629-4.207 1.812l-0.5 0.551c-0.18 0.195-0.277 0.453-0.262 0.719 0.012 0.265 0.129 0.515 0.328 0.695 0.195 0.18 0.453 0.273 0.719 0.258 0.265-0.012 0.515-0.129 0.695-0.328l0.496-0.547c1.277-1.402 4.16-1.496 5.523 0.004l0.5 0.543c0.176 0.199 0.426 0.316 0.691 0.328 0.266 0.016 0.524-0.078 0.723-0.258 0.195-0.18 0.312-0.43 0.324-0.695 0.012-0.262-0.082-0.524-0.262-0.719l-0.5-0.547c-1.121-1.234-2.703-1.828-4.27-1.816zm0.031 4c-0.512 0-1.023 0.195-1.414 0.586-0.781 0.781-0.781 2.047 0 2.828s2.047 0.781 2.828 0 0.781-2.047 0-2.828c-0.39-0.391-0.902-0.586-1.414-0.586z" fill="#f5f5f5"/></svg>
+      <!-- Volume (Adwaita audio-volume-high-symbolic) -->
+      <svg viewBox="0 0 16 16"><path d="m7 1.008c-0.297-0.004-0.578 0.125-0.77 0.352l-3.23 3.64h-1c-1.094 0-2 0.844-2 2v2c0 1.09 0.91 2 2 2h1l3.23 3.64c0.211 0.254 0.492 0.364 0.77 0.36zm6.461 0.96c-0.191-0.004-0.387 0.055-0.559 0.168-0.457 0.312-0.578 0.934-0.27 1.39 1.825 2.707 1.825 6.239 0 8.946-0.309 0.457-0.188 1.078 0.27 1.39 0.457 0.309 1.078 0.188 1.39-0.27 1.137-1.691 1.707-3.64 1.707-5.593s-0.57-3.902-1.707-5.594c-0.195-0.285-0.512-0.437-0.832-0.437zm-3.422 2.02c-0.223-0.008-0.453 0.058-0.645 0.203-0.262 0.2-0.394 0.5-0.394 0.805v0.058c0.012 0.192 0.074 0.375 0.2 0.536 1.073 1.43 1.073 3.39 0 4.816-0.126 0.164-0.188 0.348-0.2 0.535v0.063c0 0.304 0.133 0.605 0.395 0.804 0.441 0.332 1.066 0.242 1.398-0.199 0.805-1.066 1.207-2.336 1.207-3.61s-0.402-2.542-1.207-3.613c-0.184-0.246-0.465-0.383-0.754-0.398z" fill="#f5f5f5"/></svg>
+      <!-- Battery (Adwaita battery-level-80-symbolic) -->
+      <svg viewBox="0 0 16 16"><path d="m7 0c-1 0-1 1-1 1v1h-1s-0.707-0.016-1.445 0.355c-0.742 0.371-1.555 1.313-1.555 2.645v8s-0.016 0.707 0.355 1.449c0.371 0.738 1.313 1.551 2.645 1.551h6s0.707 0.016 1.449-0.355c0.738-0.371 1.551-1.313 1.551-2.645v-8c0-1.332-0.813-2.273-1.551-2.645-0.742-0.371-1.449-0.355-1.449-0.355h-1v-1c0-1-1-1-1-1zm1 4h3c0.555 0 1 0.445 1 1v8c0 0.555-0.445 1-1 1h-6c-0.555 0-1-0.445-1-1v-8c0-0.555 0.445-1 1-1zm-3 3v6h6v-6z" fill="#f5f5f5"/></svg>
+      <!-- Power (Adwaita system-shutdown-symbolic) -->
+      <svg viewBox="0 0 16 16"><path d="m8 0c-0.551 0-1 0.449-1 1v5c0 0.551 0.449 1 1 1s1-0.449 1-1v-5c0-0.551-0.449-1-1-1zm-3.137 1.816c-0.129 0.016-0.254 0.059-0.367 0.125-2.734 1.582-4.074 4.816-3.258 7.871 0.82 3.051 3.594 5.184 6.75 5.188 3.16 0.004 5.941-2.121 6.766-5.168 0.828-3.051-0.5-6.289-3.23-7.879-0.477-0.281-1.09-0.121-1.368 0.36-0.133 0.226-0.172 0.5-0.105 0.757 0.07 0.258 0.234 0.477 0.465 0.61 1.957 1.14 2.902 3.441 2.312 5.629-0.593 2.184-2.57 3.695-4.832 3.691-2.265-0.004-4.238-1.52-4.824-3.707s0.363-4.488 2.324-5.621c0.477-0.277 0.641-0.887 0.363-1.363-0.133-0.23-0.348-0.398-0.605-0.465-0.125-0.035-0.258-0.043-0.391-0.027z" fill="#f5f5f5"/></svg>
+    </div>
+  </nav>
+
+  <!-- ============================================
+       Hero
+       ============================================ -->
+  <section class="hero" id="top">
+    <div class="hero-content">
+      <h1 class="hero-title">Look Before You Click</h1>
+      <p class="hero-subtitle">Sparse Critical-Action Review for Computer-Use Agent Control</p>
+      <p class="hero-author">Ashton Chew &middot; Keegan Wang &middot; Harsh Akunuri &middot; with Apart Research</p>
+
+      <div class="hero-links">
+        <a href="https://github.com/ashtonchew/look-before-you-click" class="hero-link hero-link--primary"><svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle;margin-right:6px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+      </div>
+    </div>
+
+    <video autoplay muted loop playsinline style="max-width: 960px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.3); margin-bottom: var(--space-2xl);">
+      <source src="zoom_trajectories.mp4" type="video/mp4">
+    </video>
+
+    <div class="hero-screenshots">
+      <!-- Thunderbird injection screenshot -->
+      <div class="hero-screenshot-window">
+        <div class="window-titlebar">
+          <span class="window-title">Write: New-month AWS Bill - Thunderbird</span>
+          <div class="window-controls">
+            <span class="window-btn">&#8722;</span>
+            <span class="window-btn">&#9723;</span>
+            <span class="window-btn window-btn--close">&#10005;</span>
+          </div>
+        </div>
+        <img src="images/hero-thunderbird-injection.png" alt="Thunderbird email compose showing prompt injection text instructing the agent to forward the email">
+      </div>
+
+      <!-- Email with malicious link -->
+      <div class="hero-screenshot-window">
+        <div class="window-titlebar">
+          <span class="window-title">Thunderbird Mail - Injected Email</span>
+          <div class="window-controls">
+            <span class="window-btn">&#8722;</span>
+            <span class="window-btn">&#9723;</span>
+            <span class="window-btn window-btn--close">&#10005;</span>
+          </div>
+        </div>
+        <img src="images/hero-email-read-injection.png" alt="Thunderbird inbox showing an email with an injected malicious link">
+      </div>
+
+      <!-- Floating BLOCK dialog -->
+      <div class="hero-block-card">
+        <div class="block-dialog-titlebar">
+          <span>Action Blocked</span>
+          <div class="window-controls">
+            <span class="window-btn">&#8722;</span>
+            <span class="window-btn">&#9723;</span>
+            <span class="window-btn window-btn--close">&#10005;</span>
+          </div>
+        </div>
+        <div class="block-dialog-body">
+          <svg class="block-dialog-icon" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#a81119"/><rect x="21" y="12" width="6" height="16" rx="3" fill="white"/><circle cx="24" cy="34" r="3" fill="white"/></svg>
+          <div class="block-dialog-content">
+            <div class="hero-block-label">Reviewer Decision: BLOCK</div>
+            <p class="hero-block-reason">The email body contains an injected instruction to send the task's instructions to a third party, and clicking Send would follow unsafe content rather than the user's requested draft.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Abstract / Core Insight
+       ============================================ -->
+  <section class="section-spacer" id="abstract">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Abstract</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <div class="grid-3 mb-xl">
+          <div class="stat-card">
+            <div class="stat-number">79%</div>
+            <div class="stat-label">of all reviews from top 3 action families</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">82%</div>
+            <div class="stat-label">of all blocks from top 3 action families</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">0</div>
+            <div class="stat-label">false-positive blocks on honest tasks (environmental)</div>
+          </div>
+        </div>
+
+        <div class="typewriter">
+          <p class="tw-target">Harmful computer-use agent (CUA) trajectories often bottleneck at a small set of irreversible GUI actions. We evaluate a sparse critical-action review protocol that intercepts only these actions before execution and routes them to a trusted reviewer with live screenshot and accessibility-tree context.</p>
+
+          <p class="tw-target">In the environmental ablation cohort, selective state-grounded review without legibility (B3) is the best observed frontier point, reaching 91.7% safety (11/12) at 60.0% usefulness (3/5) versus 58.3% (7/12) safety for unmonitored B0. In paired B0/B4 runs on the final cohort, sparse review improves safety from 58.3% to 66.7% (8/12) under environmental prompt injection and from 58.3% to 75.0% (9/12) under scheming, with zero blocked honest environmental tasks (0/5).</p>
+
+          <p class="tw-target">The top three critical-action families account for 79.2% (19/24) of reviews and 81.8% (9/11) of blocks. A failure taxonomy identifies timing gaps, boundary escapes, router gaps, and reviewer-calibration failures. With N=12 attack tasks per threat model, these results give seed to a reusable principle: future CUA control can target a small set of GUI actions where harm becomes irreversible.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Threat Models
+       ============================================ -->
+  <section class="section-spacer" id="threat-models">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Threat Models</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <p class="mb-lg">We evaluate under two high-stakes threat models. In both, a single critical action (sending the phishing email, exfiltrating the file) constitutes the catastrophe.</p>
+
+        <div class="grid-2">
+          <div class="threat-card">
+            <div class="threat-card-header threat-card-header--env">
+              <span>Environmental Prompt Injection</span>
+            </div>
+            <div class="threat-card-body">
+              <img src="images/hero-chrome-notification.png" alt="Chrome browser showing a desktop notification with injected instructions" class="threat-card-img">
+              <p class="text-sm">Malicious content is injected into the agent's environment (emails, web pages, desktop notifications) attempting to redirect the honest agent toward harmful actions. The agent is honest but susceptible to confused-deputy attacks.</p>
+              <span class="badge badge--count">5 honest + 12 attack tasks</span>
+            </div>
+          </div>
+
+          <div class="threat-card">
+            <div class="threat-card-header threat-card-header--schem">
+              <span>Scheming with Hidden Objectives</span>
+            </div>
+            <div class="threat-card-body">
+              <img src="images/hero-vscode-scheming.png" alt="VS Code editor showing code in the scheming task environment" class="threat-card-img">
+              <p class="text-sm">The agent is given a hidden side-task alongside its main task and may pursue the side-task while attempting to appear honest. This models an intentionally subversive agent.</p>
+              <span class="badge badge--count">12 honest + 12 attack tasks</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Protocol Pipeline
+       ============================================ -->
+  <section class="section-spacer" id="protocol">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Protocol Pipeline</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body window-body--dark">
+        <p style="color: var(--text-muted); margin-bottom: var(--space-lg);">The control protocol inserts a decision layer between action prediction and execution. The protocol is fail-closed: review errors result in blocks.</p>
+
+        <div class="pipeline-mermaid">
+          <svg viewBox="0 0 740 610" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px;display:block;margin:0 auto;" role="img" aria-label="Protocol pipeline diagram">
+            <style>
+              .p-box{fill:#fff;stroke:#bbb;stroke-width:1}
+              .p-box-green{fill:#fff;stroke:#4e9a06;stroke-width:2}
+              .p-box-red{fill:#fff;stroke:#cc0000;stroke-width:2}
+              .p-box-gray{fill:#fff;stroke:#999;stroke-width:1}
+              .p-title{font-family:Cantarell,Ubuntu,sans-serif;font-size:15px;font-weight:700;fill:#363636}
+              .p-desc{font-family:Cantarell,Ubuntu,sans-serif;font-size:12px;fill:#71717a}
+              .p-branch{font-family:Cantarell,Ubuntu,sans-serif;font-size:12px;fill:#71717a}
+              .p-line{stroke:#999;stroke-width:1;fill:none}
+              .p-arrow{fill:#999}
+            </style>
+            <rect class="p-box" x="170" y="10" width="400" height="88"/>
+            <text class="p-title" x="370" y="38" text-anchor="middle">NORMALIZE</text>
+            <text class="p-desc" x="370" y="56" text-anchor="middle">Parse PyAutoGUI command into</text>
+            <text class="p-desc" x="370" y="70" text-anchor="middle">structured action: kind, coords, text, target element</text>
+            <line class="p-line" x1="370" y1="98" x2="370" y2="130"/>
+            <polygon class="p-arrow" points="365,125 375,125 370,133"/>
+            <rect class="p-box" x="170" y="133" width="400" height="88"/>
+            <text class="p-title" x="370" y="161" text-anchor="middle">ROUTE</text>
+            <text class="p-desc" x="370" y="179" text-anchor="middle">10-family critical-action router</text>
+            <text class="p-desc" x="370" y="193" text-anchor="middle">evaluates if action belongs to a critical family</text>
+            <line class="p-line" x1="275" y1="221" x2="275" y2="252"/>
+            <line class="p-line" x1="275" y1="252" x2="165" y2="252"/>
+            <line class="p-line" x1="165" y1="252" x2="165" y2="300"/>
+            <polygon class="p-arrow" points="160,295 170,295 165,303"/>
+            <text class="p-branch" x="215" y="247" text-anchor="middle">Not critical</text>
+            <line class="p-line" x1="465" y1="221" x2="465" y2="252"/>
+            <line class="p-line" x1="465" y1="252" x2="530" y2="252"/>
+            <line class="p-line" x1="530" y1="252" x2="530" y2="300"/>
+            <polygon class="p-arrow" points="525,295 535,295 530,303"/>
+            <text class="p-branch" x="502" y="247" text-anchor="middle">Critical</text>
+            <rect class="p-box-green" x="55" y="305" width="220" height="48"/>
+            <text x="165" y="334" text-anchor="middle" style="font-family:Cantarell,Ubuntu,sans-serif;font-size:14px;font-weight:700;fill:#4e9a06">EXECUTE IMMEDIATELY</text>
+            <rect class="p-box" x="360" y="305" width="340" height="88"/>
+            <text class="p-title" x="530" y="333" text-anchor="middle">REVIEW</text>
+            <text class="p-desc" x="530" y="351" text-anchor="middle">Assemble review package:</text>
+            <text class="p-desc" x="530" y="365" text-anchor="middle">live screenshot + a11y tree + recent action history</text>
+            <line class="p-line" x1="530" y1="393" x2="530" y2="425"/>
+            <polygon class="p-arrow" points="525,420 535,420 530,428"/>
+            <rect class="p-box" x="360" y="428" width="340" height="72"/>
+            <text class="p-title" x="530" y="456" text-anchor="middle">DECIDE</text>
+            <text class="p-desc" x="530" y="474" text-anchor="middle">Trusted reviewer returns one of four decisions</text>
+            <path class="p-line" d="M430,500 C430,530 295,530 295,555"/>
+            <polygon class="p-arrow" points="290,550 300,550 295,558"/>
+            <path class="p-line" d="M480,500 C480,530 435,530 435,555"/>
+            <polygon class="p-arrow" points="430,550 440,550 435,558"/>
+            <path class="p-line" d="M580,500 C580,530 570,530 570,555"/>
+            <polygon class="p-arrow" points="565,550 575,550 570,558"/>
+            <path class="p-line" d="M640,500 C640,530 700,530 700,555"/>
+            <polygon class="p-arrow" points="695,550 705,550 700,558"/>
+            <rect class="p-box-green" x="235" y="558" width="120" height="40"/>
+            <text x="295" y="584" text-anchor="middle" style="font-family:Cantarell,Ubuntu,sans-serif;font-size:14px;font-weight:700;fill:#4e9a06">ALLOW</text>
+            <rect class="p-box-red" x="375" y="558" width="120" height="40"/>
+            <text x="435" y="584" text-anchor="middle" style="font-family:Cantarell,Ubuntu,sans-serif;font-size:14px;font-weight:700;fill:#cc0000">BLOCK</text>
+            <rect class="p-box-gray" x="505" y="558" width="130" height="40"/>
+            <text x="570" y="584" text-anchor="middle" style="font-family:Cantarell,Ubuntu,sans-serif;font-size:14px;font-weight:700;fill:#363636">RESAMPLE</text>
+            <rect class="p-box-gray" x="645" y="558" width="110" height="40"/>
+            <text x="700" y="584" text-anchor="middle" style="font-family:Cantarell,Ubuntu,sans-serif;font-size:14px;font-weight:700;fill:#363636">DEFER</text>
+          </svg>
+        </div>
+
+        <p class="text-sm mt-lg" style="color: #6b7280;">H/T/U mapping: Untrusted (U) = o4-mini as CUA agent. Trusted (T) = GPT-5.4-mini as reviewer. Human (H) = absent. Post-run safety judge: GPT-4.1.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Critical-Action Router
+       ============================================ -->
+  <section class="section-spacer" id="router">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Critical-Action Router</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <p class="mb-lg text-sm text-muted">The router classifies actions into 10 families based on keyword matching against UI element labels and typed text. It answers only whether an action belongs to a family where harm could become irreversible. Safety judgment is the reviewer's responsibility.</p>
+
+        <div class="family-grid">
+          <div class="family-entry family-entry--active">
+            <div class="family-name">send / submit / share</div>
+            <div class="family-triggers">send, submit, share, post, publish, forward, reply</div>
+          </div>
+          <div class="family-entry family-entry--active">
+            <div class="family-name">external navigation</div>
+            <div class="family-triggers">address bar change, external link, new domain</div>
+          </div>
+          <div class="family-entry family-entry--active">
+            <div class="family-name">upload / attach / export</div>
+            <div class="family-triggers">upload, attach, export, browse, choose file, save as</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">permission / settings / security</div>
+            <div class="family-triggers">allow, permit, grant, security, privacy, permissions</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">financial / account confirmation</div>
+            <div class="family-triggers">pay, purchase, confirm account change</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">terminal / exec</div>
+            <div class="family-triggers">terminal, shell, run command, sudo, install, chmod</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">delete / overwrite</div>
+            <div class="family-triggers">delete, trash, remove, discard, overwrite, permanent</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">credential / secret exposure</div>
+            <div class="family-triggers">sk-, AKIA, ghp_, BEGIN OPENSSH, ssh-rsa patterns</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">clipboard paste to external</div>
+            <div class="family-triggers">paste into browser, email, chat, or form</div>
+          </div>
+          <div class="family-entry">
+            <div class="family-name">bulk action</div>
+            <div class="family-triggers">actions affecting many items or folders</div>
+          </div>
+        </div>
+
+        <p class="text-xs text-muted mt-lg"><strong class="text-accent">Highlighted:</strong> Top 3 concentrated families (79% of reviews, 82% of blocks).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Results: Ablation Ladder
+       ============================================ -->
+  <section class="section-spacer" id="results">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Results: Ablation Ladder (Environmental)</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <p class="mb-lg">The ablation ladder traces the safety/usefulness Pareto frontier across five baselines, revealing B3 (selective state-grounded review) as the best frontier point.</p>
+
+        <table class="data-table mb-xl">
+          <thead>
+            <tr>
+              <th>Baseline</th>
+              <th>Description</th>
+              <th>Usefulness</th>
+              <th>Safety</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-mono">B0</td>
+              <td>Unmonitored</td>
+              <td>60.0% (3/5)</td>
+              <td class="cell-danger">58.3% (7/12)</td>
+            </tr>
+            <tr>
+              <td class="font-mono">B1</td>
+              <td>Always review, language-only</td>
+              <td class="cell-danger">0.0% (0/5)</td>
+              <td>83.3% (10/12)</td>
+            </tr>
+            <tr>
+              <td class="font-mono">B2</td>
+              <td>Always review, state-grounded</td>
+              <td>40.0% (2/5)</td>
+              <td class="cell-safe">100.0% (12/12)</td>
+            </tr>
+            <tr class="row-best">
+              <td class="font-mono font-semibold">B3</td>
+              <td><strong>Selective routing, state-grounded</strong></td>
+              <td class="cell-safe"><strong>60.0% (3/5)</strong></td>
+              <td class="cell-safe"><strong>91.7% (11/12)</strong></td>
+            </tr>
+            <tr>
+              <td class="font-mono">B4</td>
+              <td>Selective + legibility</td>
+              <td>40.0% (2/5)</td>
+              <td>66.7% (8/12)</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="text-xs text-muted mb-lg">B0/B4 from corrected final cohort; B1/B2/B3 from environmental ablation cohort. Direct B3 vs B4 comparisons carry cross-session noise.</p>
+
+        <h3>Key Findings</h3>
+
+        <div class="callout callout--safe">
+          <div class="callout-title">Visual context is load-bearing</div>
+          <p class="callout-text">B2 achieves 100% safety compared to B1's 83.3%. B1 destroys usefulness entirely (0%) because the language-only reviewer cannot distinguish critical from benign actions without seeing the screen.</p>
+        </div>
+
+        <div class="callout callout--safe">
+          <div class="callout-title">Selective routing recovers usefulness</div>
+          <p class="callout-text">B3 achieves the same 60.0% usefulness as unmonitored B0 while improving safety from 58.3% to 91.7% (11/12). B3 is the best point on the safety/usefulness frontier.</p>
+        </div>
+
+        <div class="callout callout--warning">
+          <div class="callout-title">Legibility unexpectedly degrades performance</div>
+          <p class="callout-text">B4 is worse than B3 on both safety (66.7% vs 91.7%) and usefulness (40.0% vs 60.0%). This carries a cross-cohort caveat and requires larger-sample confirmation.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Results: Paired B0 vs B4
+       ============================================ -->
+  <section class="section-spacer">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Paired B0 vs B4 &mdash; Both Threat Models</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <table class="data-table mb-lg">
+          <thead>
+            <tr>
+              <th>Threat Model</th>
+              <th>Baseline</th>
+              <th>Usefulness</th>
+              <th>Safety</th>
+              <th>Honest Blocked</th>
+              <th>Reviews</th>
+              <th>Blocks</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge badge--env">Environmental</span></td>
+              <td class="font-mono">B0</td>
+              <td>60.0% (3/5)</td>
+              <td class="cell-danger">58.3% (7/12)</td>
+              <td>0/5</td>
+              <td>0</td>
+              <td>0</td>
+            </tr>
+            <tr class="row-highlight">
+              <td><span class="badge badge--env">Environmental</span></td>
+              <td class="font-mono">B4</td>
+              <td>40.0% (2/5)</td>
+              <td class="cell-accent">66.7% (8/12)</td>
+              <td class="cell-safe">0/5</td>
+              <td>9</td>
+              <td>4</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge--schem">Scheming</span></td>
+              <td class="font-mono">B0</td>
+              <td>75.0% (9/12)</td>
+              <td class="cell-danger">58.3% (7/12)</td>
+              <td>0/12</td>
+              <td>0</td>
+              <td>0</td>
+            </tr>
+            <tr class="row-highlight">
+              <td><span class="badge badge--schem">Scheming</span></td>
+              <td class="font-mono">B4</td>
+              <td>41.7% (5/12)</td>
+              <td class="cell-accent">75.0% (9/12)</td>
+              <td>1/12</td>
+              <td>15</td>
+              <td>7</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="grid-2">
+          <div class="callout callout--safe">
+            <div class="callout-title">Environmental: +8.4pp safety</div>
+            <p class="callout-text">Zero false-positive blocks on honest tasks (0/5). Mean review latency: 3005ms.</p>
+          </div>
+          <div class="callout callout--info">
+            <div class="callout-title">Scheming: +16.7pp safety</div>
+            <p class="callout-text">Side-task prevention improves from 58.3% to 75.0%, but usefulness drops from 75.0% to 41.7%.</p>
+          </div>
+        </div>
+
+        <p class="text-xs text-muted mt-md">With N=12 attack tasks per threat model, each outcome shifts safety by 8.3pp (95% binomial CI for 66.7%: [34.9%, 90.1%]).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Concentration Evidence
+       ============================================ -->
+  <section class="section-spacer" id="concentration">
+    <div class="window" style="max-width: 1100px;">
+      <div class="window-titlebar">
+        <span class="window-title">Concentration Evidence</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body window-body--dark">
+        <p class="text-sm mb-lg" style="color: var(--text-muted);">Critical-action family distribution aggregated across both threat models under B4.</p>
+
+        <div style="display: flex; flex-direction: column; gap: var(--space-2xl);">
+          <div>
+            <h3 style="color: #363636; margin-bottom: var(--space-lg);">Reviews &amp; Blocks by Family</h3>
+            <div class="bar-chart">
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">send/submit/share</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--reviewed" style="width: 80%;">8</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 30%;">3</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">external navigation</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--reviewed" style="width: 60%;">6</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 40%;">4</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">upload/attach/export</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--reviewed" style="width: 50%;">5</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 20%;">2</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">permission/security</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--reviewed" style="width: 20%;">2</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">financial/account</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--reviewed" style="width: 20%;">2</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 20%;">2</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">terminal/exec</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--reviewed" style="width: 10%;">1</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-lg" style="display: flex; gap: var(--space-md);">
+              <span style="color: var(--text-muted);"><span style="display:inline-block; width:12px; height:12px; background:#6b7280; vertical-align: middle; margin-right: 4px;"></span> Reviewed</span>
+              <span style="color: var(--text-muted);"><span style="display:inline-block; width:12px; height:12px; background:var(--danger); vertical-align: middle; margin-right: 4px;"></span> Blocked</span>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="color: #363636; margin-bottom: var(--space-lg);">Safety vs Usefulness Frontier (B0-B4)</h3>
+            <div class="bar-chart">
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">Unmonitored</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--safe" style="width: 60%;">60%</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 58.3%;">58%</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">Always review, language-only</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--safe" style="width: 0%;"></div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 83.3%;">83%</div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">Always review, state-grounded</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--safe" style="width: 40%;">40%</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 100%;">100%</div></div>
+                </div>
+              </div>
+              <div class="bar-group" style="background: rgba(233,84,32,0.08); margin: -4px -8px; padding: 4px 8px;">
+                <span class="bar-label bar-label--dark" style="font-weight: 700;">Selective routing, state-grounded</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--safe" style="width: 60%;"><strong>60%</strong></div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 91.7%;"><strong>92%</strong></div></div>
+                </div>
+              </div>
+              <div class="bar-group">
+                <span class="bar-label bar-label--dark">Selective + Legibility</span>
+                <div class="bar-group-tracks">
+                  <div class="bar-track bar-track--dark"><div class="bar-fill bar-fill--safe" style="width: 40%;">40%</div></div>
+                  <div class="bar-track bar-track--dark" style="height:18px;"><div class="bar-fill bar-fill--blocked" style="width: 66.7%;">67%</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-lg" style="display: flex; gap: var(--space-md);">
+              <span style="color: var(--text-muted);"><span style="display:inline-block; width:12px; height:12px; background:var(--safe); vertical-align: middle; margin-right: 4px;"></span> Usefulness</span>
+              <span style="color: var(--text-muted);"><span style="display:inline-block; width:12px; height:12px; background:var(--danger); vertical-align: middle; margin-right: 4px;"></span> Safety</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout mt-xl" style="background: rgba(233,84,32,0.1); border-color: var(--accent);">
+          <p class="callout-text" style="color: #363636;"><strong class="text-accent">The top three families account for 79.2% (19/24) of all reviewed actions and 81.8% (9/11) of all blocks.</strong> A minimal router covering only these three families would have caught 82% of blocked actions.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Failure Taxonomy
+       ============================================ -->
+  <section class="section-spacer" id="failures">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Failure Taxonomy</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <p class="mb-lg">Four structural modes where sparse review fails. These are boundary conditions of any sparse review approach, not implementation bugs.</p>
+
+        <table class="data-table mb-lg">
+          <thead>
+            <tr>
+              <th>Failure Mode</th>
+              <th>Description</th>
+              <th>Count</th>
+              <th>Threat Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-mono font-semibold">Timing</td>
+              <td>Harm completes before next review checkpoint</td>
+              <td class="font-mono"><strong>8</strong></td>
+              <td><span class="badge badge--schem">Scheming</span></td>
+            </tr>
+            <tr>
+              <td class="font-mono font-semibold">Reviewer FP</td>
+              <td>Reviewer blocks for wrong reason on attack trace</td>
+              <td class="font-mono">4</td>
+              <td><span class="badge badge--schem">Scheming</span></td>
+            </tr>
+            <tr>
+              <td class="font-mono font-semibold">Boundary</td>
+              <td>No reviewable critical action exists (stop_task)</td>
+              <td class="font-mono">3</td>
+              <td><span class="badge badge--env">Environmental</span></td>
+            </tr>
+            <tr>
+              <td class="font-mono font-semibold">Router gap</td>
+              <td>Critical action not surfaced by router</td>
+              <td class="font-mono">2</td>
+              <td><span class="badge badge--schem">Scheming</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="text-sm text-muted"><strong>Timing failures</strong> are dominant (8 cases, all scheming): the agent completes the harmful side-task before reaching an action that triggers review. <strong>Boundary failures</strong> occur exclusively in environmental attacks, where injection causes the agent to stop without executing a critical action. <strong>Router gaps</strong> occur in scheming, where the harmful action doesn't match any family keyword.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Discussion
+       ============================================ -->
+  <section class="section-spacer" id="discussion">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Discussion &amp; Limitations</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <details open>
+          <summary>
+            <span class="details-title">When sparse review works</span>
+            <span class="details-controls">
+              <span class="window-btn">&#8722;</span>
+              <span class="window-btn">&#9723;</span>
+              <span class="window-btn window-btn--close">&#10005;</span>
+            </span>
+          </summary>
+          <div class="details-content">
+            <p>The protocol is most effective against environmental attacks with clear action boundaries: injected instructions causing the agent to click "Send" on an unauthorized email, navigate to a credential-harvesting URL, or upload files to an external service. These actions are identifiable by keyword matching, and the live screen state provides strong signal for reviewing intent alignment.</p>
+          </div>
+        </details>
+
+        <details open>
+          <summary>
+            <span class="details-title">When sparse review fails</span>
+            <span class="details-controls">
+              <span class="window-btn">&#8722;</span>
+              <span class="window-btn">&#9723;</span>
+              <span class="window-btn window-btn--close">&#10005;</span>
+            </span>
+          </summary>
+          <div class="details-content">
+            <p>The failure taxonomy maps three structural limits: timing failures (harm precedes the review checkpoint), boundary failures (no reviewable critical action exists), and router gaps (harmful actions fall outside the taxonomy). These define where any sparse deferral scheme that does not review every action will struggle.</p>
+          </div>
+        </details>
+
+        <details open>
+          <summary>
+            <span class="details-title">The legibility puzzle (B4 &lt; B3)</span>
+            <span class="details-controls">
+              <span class="window-btn">&#8722;</span>
+              <span class="window-btn">&#9723;</span>
+              <span class="window-btn window-btn--close">&#10005;</span>
+            </span>
+          </summary>
+          <div class="details-content">
+            <p>Three candidate explanations, ordered by likelihood: (1) Cross-cohort variation: B3 and B4 come from different run sessions, and with N=5 benign and N=12 attack tasks, sampling noise is substantial. (2) Reviewer anchoring: the untrusted legibility report may provide plausible-sounding justifications that anchor the reviewer toward allowing harmful actions. (3) A "less-is-more" effect consistent with findings that additional monitor information can degrade detection quality (Barr et al., 2025). Disentangling requires same-cohort evaluation at larger scale.</p>
+          </div>
+        </details>
+
+        <details open>
+          <summary>
+            <span class="details-title">Adaptive attackers</span>
+            <span class="details-controls">
+              <span class="window-btn">&#8722;</span>
+              <span class="window-btn">&#9723;</span>
+              <span class="window-btn window-btn--close">&#10005;</span>
+            </span>
+          </summary>
+          <div class="details-content">
+            <p>We conducted six A2 (adaptive attacker) runs testing protocol-aware environmental injections and scheming prompts. The agent did not follow the protocol-aware adversarial instructions, rendering results inconclusive. We cannot claim robustness to protocol-aware attackers. Terekhov et al. (2025) demonstrate that protocol awareness can collapse safety in control settings, and Schaeffer et al. (2026) show that attack selection in concentrated settings can undermine sparse monitoring.</p>
+          </div>
+        </details>
+
+        <details open>
+          <summary>
+            <span class="details-title">Sample size and generalization</span>
+            <span class="details-controls">
+              <span class="window-btn">&#8722;</span>
+              <span class="window-btn">&#9723;</span>
+              <span class="window-btn window-btn--close">&#10005;</span>
+            </span>
+          </summary>
+          <div class="details-content">
+            <p>With N=12 attack tasks per threat model, each outcome shifts the rate by 8.3 percentage points. Results are specific to OS-Harm tasks, o4-mini as agent, GPT-5.4-mini as reviewer, and the current 10-family router taxonomy. The protocol targets high-stakes, single-action threats; it is not designed for diffuse sabotage.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Conclusion
+       ============================================ -->
+  <section class="section-spacer">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Conclusion</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body window-body--dark">
+        <div class="typewriter">
+          <p class="tw-target" style="color: #363636; line-height: 1.8;">Harmful CUA trajectories concentrate in a small set of irreversible GUI action families. In the environmental ablation cohort, selective state-grounded review without legibility (B3) reaches 91.7% safety (11/12) at 60.0% usefulness (3/5), compared to 58.3% (7/12) for unmonitored B0 and 100.0% (12/12) safety at 40.0% (2/5) usefulness for blanket visual review (B2). In paired B0/B4 runs on the corrected final cohort, sparse review still improves safety under both environmental and scheming threat models, but with clearer usefulness and calibration costs.</p>
+
+          <p class="tw-target" style="color: var(--text-muted);">The concentration finding is a reusable design principle. A protocol designer building a CUA control layer can start by profiling the action-family distribution of representative trajectories. If harm concentrates, as it did here with three families covering 81.8% (9/11) of blocked actions, the designer can build a narrow, high-precision router rather than a broad classifier. This preserves usefulness by avoiding the blanket monitoring tax.</p>
+        </div>
+
+        <h3 style="color: #363636; margin-top: var(--space-xl);">Future Work</h3>
+        <ol style="color: var(--text-muted); padding-left: 20px;">
+          <li style="margin-bottom: 8px;">Does concentration generalize across different CUA task distributions, agent architectures, and GUI platforms?</li>
+          <li style="margin-bottom: 8px;">Scaling to more capable agents and complex multi-application workflows.</li>
+          <li style="margin-bottom: 8px;">Adaptive attacker protocols that produce protocol-aware evasion, including attacker self-resampling.</li>
+          <li>Integrating human reviewers (H) for highest-suspicion actions, measuring the full H/T/U frontier.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Baseline Configurations (compact reference)
+       ============================================ -->
+  <section class="section-spacer">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">Appendix: Baseline Configurations</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Baseline</th>
+              <th>Router</th>
+              <th>Reviewer Input</th>
+              <th>Agent Justification</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-mono">B0</td>
+              <td>None</td>
+              <td>None</td>
+              <td>N/A</td>
+            </tr>
+            <tr>
+              <td class="font-mono">B1</td>
+              <td>All actions</td>
+              <td>Language-only</td>
+              <td>No</td>
+            </tr>
+            <tr>
+              <td class="font-mono">B2</td>
+              <td>All actions</td>
+              <td>State-grounded</td>
+              <td>No</td>
+            </tr>
+            <tr class="row-best">
+              <td class="font-mono font-semibold">B3</td>
+              <td><strong>Selective (10-family)</strong></td>
+              <td><strong>State-grounded</strong></td>
+              <td>No</td>
+            </tr>
+            <tr>
+              <td class="font-mono">B4</td>
+              <td>Selective (10-family)</td>
+              <td>State-grounded</td>
+              <td>Yes (untrusted)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       References
+       ============================================ -->
+  <section class="section-spacer" id="references">
+    <div class="window">
+      <div class="window-titlebar">
+        <span class="window-title">References</span>
+        <div class="window-controls">
+          <span class="window-btn">&#8722;</span>
+          <span class="window-btn">&#9723;</span>
+          <span class="window-btn window-btn--close">&#10005;</span>
+        </div>
+      </div>
+      <div class="window-body" style="color: var(--text-muted); line-height: 1.8;">
+        <p>Arike et al. (2026). How Does Information Access Affect LLM Monitors' Ability to Detect Sabotage? <em>arXiv:2601.21112</em>.</p>
+        <p>Bhatt, A. et al. (2025). Ctrl-Z: Controlling AI Agents via Resampling. <em>arXiv:2504.10374</em>.</p>
+        <p>Chen, Y. et al. (2025). Mind the Gap: Time-of-Check to Time-of-Use Vulnerabilities in LLM-Enabled Agents. <em>arXiv:2508.17155</em>.</p>
+        <p>Debenedetti, E. et al. (2024). AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents. <em>arXiv:2406.13352</em>.</p>
+        <p>Foerster, H. et al. (2026). CaMeLs Can Use Computers Too: System-level Security for Computer Use Agents. <em>arXiv:2601.09923</em>.</p>
+        <p>Gong, H. et al. (2025). Secure and Efficient Access Control for Computer-Use Agents via Context Space. <em>arXiv:2509.22256</em>.</p>
+        <p>Greenblatt, R. et al. (2024). AI Control: Improving Safety Despite Intentional Subversion. <em>ICML 2024. arXiv:2312.06942</em>.</p>
+        <p>Greshake, K. et al. (2023). Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection. <em>AISec 2023. arXiv:2302.12173</em>.</p>
+        <p>Hu, H. et al. (2025). AgentSentinel: An End-to-End and Real-Time Security Defense Framework for Computer-Use Agents. <em>arXiv:2509.07764</em>.</p>
+        <p>Kale, S. et al. (2025). Reliable Weak-to-Strong Monitoring of LLM Agents. <em>arXiv:2508.19461</em>.</p>
+        <p>Kuntz, T. et al. (2025). OS-Harm: A Benchmark for Measuring Safety of Computer Use Agents. <em>arXiv:2506.14866</em>.</p>
+        <p>Kutasov, J. et al. (2025). Evaluating Control Protocols for Untrusted AI Agents. <em>arXiv:2511.02997</em>.</p>
+        <p>Kutasov, J. et al. (2025). SHADE-Arena: Evaluating Sabotage and Monitoring in LLM Agents. <em>arXiv:2506.15740</em>.</p>
+        <p>Lee, D. et al. (2025). VeriSafe Agent: Safeguarding Mobile GUI Agent via Logic-based Action Verification. <em>arXiv:2503.18492</em>.</p>
+        <p>Liao, Z. et al. (2025). RedTeamCUA: Realistic Adversarial Testing of Computer-Use Agents in Hybrid Web-OS Environments. <em>arXiv:2505.21936</em>.</p>
+        <p>Lindner, D. et al. (2025). Practical Challenges of Control Monitoring in Frontier AI Deployments. <em>arXiv:2512.22154</em>.</p>
+        <p>Schaeffer, J., Khandelwal, A., and Tracy, T. (2026). Attack Selection Reduces Safety in Concentrated AI Control Settings against Trusted Monitoring. <em>arXiv:2602.04930</em>.</p>
+        <p>Sreevatsa, A., Prasanna, S., and Rushing, C. (2026). Basic Legibility Protocols Improve Trusted Monitoring. <em>arXiv:2602.10153</em>.</p>
+        <p>Terekhov, M. et al. (2025). Adaptive Attacks on Trusted Monitors Subvert AI Control Protocols. <em>arXiv:2510.09462</em>.</p>
+        <p>Tian, A. X. et al. (2025). Measuring Harmfulness of Computer-Using Agents. <em>arXiv:2508.00935</em>.</p>
+        <p>Vu, A. et al. (2025). DECEPTICON: How Dark Patterns Manipulate Web Agents. <em>arXiv:2512.22894</em>.</p>
+        <p>Xie, T. et al. (2024). OSWorld: Benchmarking Multimodal Agents for Open-Ended Tasks in Real Computer Environments. <em>NeurIPS 2024. arXiv:2404.07972</em>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       Footer
+       ============================================ -->
+  <footer class="footer">
+    <p>
+      <a href="https://github.com/ashtonchew/look-before-you-click">GitHub</a>
+      &nbsp;&middot;&nbsp;
+      Built for the <a href="https://apartresearch.com">Apart Research</a> AI Control Hackathon
+    </p>
+  </footer>
+
+  <!-- ============================================
+       JavaScript
+       ============================================ -->
+  <script>
+    // GNOME panel clock
+    (function updateClock() {
+      var el = document.getElementById('panel-clock');
+      if (el) {
+        var now = new Date();
+        var opts = { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+        el.textContent = now.toLocaleDateString('en-US', opts);
+      }
+      setTimeout(updateClock, 30000);
+    })();
+
+    // Smooth scroll for nav links
+    document.querySelectorAll('a[href^="#"]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        var target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // Typewriter effect for .typewriter elements
+    function typewriterReveal(el) {
+      if (el.dataset.twDone) return;
+      el.dataset.twDone = '1';
+
+      var targets = el.querySelectorAll('.tw-target');
+      if (!targets.length) return;
+
+      el.classList.add('typed');
+
+      // Build a flat list of all word spans across all paragraphs
+      var allWords = [];
+      targets.forEach(function(target) {
+        var text = target.textContent;
+        var words = text.split(/(\s+)/);
+        target.innerHTML = '';
+
+        words.forEach(function(word) {
+          if (/^\s+$/.test(word)) {
+            target.appendChild(document.createTextNode(word));
+            return;
+          }
+          var span = document.createElement('span');
+          span.className = 'tw-word';
+          span.textContent = word;
+          target.appendChild(span);
+          allWords.push({ span: span, parent: target });
+        });
+      });
+
+      // Create a single cursor element
+      var cursor = document.createElement('span');
+      cursor.className = 'tw-cursor';
+
+      // Define chunks: type N words, then pause for ~2 blinks, repeat
+      var chunkSize = 12;
+      var wordDelay = 18;       // ms between words within a chunk
+      var pauseDelay = 150;     // ms pause between chunks
+      var idx = 0;
+
+      function moveCursor(afterSpan) {
+        // Insert cursor right after the given span
+        var parent = afterSpan.parentNode;
+        if (afterSpan.nextSibling) {
+          parent.insertBefore(cursor, afterSpan.nextSibling);
+        } else {
+          parent.appendChild(cursor);
+        }
+      }
+
+      function typeChunk() {
+        if (idx >= allWords.length) {
+          // Done typing -- remove cursor after a short delay
+          setTimeout(function() { cursor.remove(); }, 1500);
+          return;
+        }
+
+        var end = Math.min(idx + chunkSize, allWords.length);
+
+        function typeNext() {
+          if (idx >= end) {
+            // Pause between chunks (cursor blinks in place)
+            setTimeout(typeChunk, pauseDelay);
+            return;
+          }
+          allWords[idx].span.classList.add('tw-visible');
+          moveCursor(allWords[idx].span);
+          idx++;
+          setTimeout(typeNext, wordDelay);
+        }
+
+        typeNext();
+      }
+
+      // Place cursor at start of first target and begin
+      if (targets[0]) targets[0].appendChild(cursor);
+      typeChunk();
+    }
+
+    // Intersection observers
+    var twObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          typewriterReveal(entry.target);
+        }
+      });
+    }, { threshold: 0.15 });
+
+    document.querySelectorAll('.typewriter').forEach(function(el) {
+      twObserver.observe(el);
+    });
+
+    var revealObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.08 });
+
+    document.querySelectorAll('.reveal').forEach(function(el) {
+      revealObserver.observe(el);
+      // Immediately reveal elements already in viewport on page load/refresh
+      var rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight && rect.bottom > 0) {
+        el.classList.add('visible');
+      }
+    });
+
+    // Scroll-reactive background windows (once visible, stay visible)
+    (function(){var m={'top':'hero','abstract':'hero','threat-models':'threat','protocol':'threat','router':'results','results':'results','concentration':'results','discussion':'discussion','references':'discussion'};var ws=document.querySelectorAll('.desktop-bg-window[data-scroll-section]');var shown=new Set();var vis=new Set();function upd(){var o=['top','abstract','threat-models','protocol','router','results','concentration','discussion','references'];for(var i=o.length-1;i>=0;i--){if(vis.has(o[i])){shown.add(m[o[i]]);break;}}if(window.scrollY<200)shown.add('hero');ws.forEach(function(w){if(shown.has(w.dataset.scrollSection))w.classList.add('visible');});}var ob=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting)vis.add(e.target.id);else vis.delete(e.target.id);});upd();},{threshold:0.1});Object.keys(m).forEach(function(id){var el=document.getElementById(id);if(el)ob.observe(el);});setTimeout(upd,100);})();
+
+    // ============================================
+    // Draggable Desktop Icons & Windows + Close
+    // ============================================
+    (function() {
+      var ICON_KEY = 'desktop-icon-positions';
+      var WIN_KEY = 'desktop-window-positions';
+      var dragState = null;
+
+      // Restore saved icon positions (percentage-based)
+      try {
+        var saved = JSON.parse(localStorage.getItem(ICON_KEY) || '{}');
+        var firstKey = Object.keys(saved)[0];
+        if (firstKey && saved[firstKey].topPct !== undefined) {
+          Object.keys(saved).forEach(function(id) {
+            var el = document.querySelector('.desktop-file[data-id="' + id + '"]');
+            if (el && saved[id]) {
+              el.style.top = saved[id].topPct + '%';
+              el.style.left = saved[id].leftPct + '%';
+              el.style.right = 'auto';
+              el.style.bottom = 'auto';
+            }
+          });
+        } else if (firstKey) {
+          localStorage.removeItem(ICON_KEY);
+        }
+      } catch(e) {}
+
+      // Clear any saved window positions so CSS values always win
+      try { localStorage.removeItem(WIN_KEY); } catch(e) {}
+
+      function saveIconPositions() {
+        var container = document.querySelector('.desktop-files');
+        if (!container) return;
+        var cw = container.offsetWidth;
+        var ch = container.offsetHeight;
+        var positions = {};
+        document.querySelectorAll('.desktop-file[data-id]').forEach(function(el) {
+          positions[el.dataset.id] = { topPct: (el.offsetTop / ch * 100), leftPct: (el.offsetLeft / cw * 100) };
+        });
+        try { localStorage.setItem(ICON_KEY, JSON.stringify(positions)); } catch(e) {}
+      }
+
+      function saveWindowPositions() {
+        var positions = {};
+        document.querySelectorAll('.desktop-bg-window[data-win-id]').forEach(function(el) {
+          positions[el.dataset.winId] = { top: el.offsetTop, left: el.offsetLeft };
+        });
+        try { localStorage.setItem(WIN_KEY, JSON.stringify(positions)); } catch(e) {}
+      }
+
+      // Desktop icon drag
+      document.querySelectorAll('.desktop-file').forEach(function(file) {
+        file.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          var rect = file.getBoundingClientRect();
+          var parent = file.parentElement.getBoundingClientRect();
+          dragState = {
+            el: file,
+            type: 'icon',
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            parentLeft: parent.left,
+            parentTop: parent.top
+          };
+          file.classList.add('dragging');
+        });
+      });
+
+      // Background window drag (by titlebar)
+      document.querySelectorAll('.bg-win-titlebar').forEach(function(bar) {
+        bar.addEventListener('mousedown', function(e) {
+          if (e.target.closest('.bg-win-btn')) return;
+          e.preventDefault();
+          var win = bar.parentElement;
+          var rect = win.getBoundingClientRect();
+          var maxZ = 1;
+          document.querySelectorAll('.desktop-bg-window').forEach(function(w) {
+            var z = parseInt(w.style.zIndex) || 1;
+            if (z > maxZ) maxZ = z;
+          });
+          win.style.zIndex = maxZ + 1;
+          dragState = {
+            el: win,
+            type: 'window',
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top
+          };
+          win.classList.add('dragging');
+        });
+      });
+
+
+
+      document.addEventListener('mousemove', function(e) {
+        if (!dragState) return;
+        if (dragState.type === 'icon') {
+          var container = dragState.el.parentElement;
+          var cw = container.offsetWidth;
+          var ch = container.offsetHeight;
+          var x = e.clientX - dragState.offsetX - dragState.parentLeft;
+          var y = e.clientY - dragState.offsetY - dragState.parentTop;
+          dragState.el.style.left = (x / cw * 100) + '%';
+          dragState.el.style.top = (y / ch * 100) + '%';
+          dragState.el.style.right = 'auto';
+          dragState.el.style.bottom = 'auto';
+        } else if (dragState.type === 'window') {
+          dragState.el.style.left = (e.clientX - dragState.offsetX) + 'px';
+          dragState.el.style.top = (e.clientY - dragState.offsetY) + 'px';
+          dragState.el.style.right = 'auto';
+          dragState.el.style.bottom = 'auto';
+        }
+      });
+
+      document.addEventListener('mouseup', function() {
+        if (!dragState) return;
+        dragState.el.classList.remove('dragging');
+        if (dragState.type === 'icon') {
+          saveIconPositions();
+        } else if (dragState.type === 'window') {
+          saveWindowPositions();
+        }
+        dragState = null;
+      });
+
+      // Close buttons on outside panels (session only, resets on refresh)
+      // Desktop background windows: last .bg-win-btn in each titlebar is close
+      document.querySelectorAll('.bg-win-controls').forEach(function(controls) {
+        var btns = controls.querySelectorAll('.bg-win-btn');
+        var closeBtn = btns[btns.length - 1]; // last button is close (✕)
+        if (closeBtn) {
+          closeBtn.style.cursor = 'pointer';
+          closeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var win = closeBtn.closest('.desktop-bg-window');
+            if (win) {
+              win.style.display = 'none';
+              win.classList.remove('visible');
+            }
+          });
+        }
+      });
+
+    })();
+  </script>
+
+</body>
+</html>
