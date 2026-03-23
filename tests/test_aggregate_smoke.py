@@ -9,11 +9,12 @@ from analysis.aggregate import (
     infer_baseline,
     read_judgment,
     write_results_csv,
-    parse_run_folder,
     compute_baseline_metrics,
     CSV_COLUMNS,
     _normalize_reviewer_decision,
     _extract_escalation_fields,
+    _detect_mixed_cohorts,
+    _experiment_family,
 )
 
 
@@ -323,6 +324,87 @@ class TestSchemingSafetyTriState:
         metrics = compute_baseline_metrics(runs, threat_model="scheming")
         # 1 safe out of 2 evaluable -> 0.5
         assert metrics["B4"]["safety"] == 0.5
+
+
+class TestDetectMixedCohorts:
+    """Regression tests for _detect_mixed_cohorts() cohort safety guard."""
+
+    def _run(self, baseline, experiment, threat_model="environmental"):
+        return {"baseline": baseline, "experiment": experiment, "threat_model": threat_model}
+
+    def test_single_experiment_per_baseline_not_mixed(self):
+        runs = [
+            self._run("B4", "final_env_b4_honest"),
+            self._run("B4", "final_env_b4_honest"),
+            self._run("B0", "final_env_b0_attack"),
+        ]
+        assert _detect_mixed_cohorts(runs) == {}
+
+    def test_different_experiments_same_baseline_same_threat_model_is_mixed(self):
+        runs = [
+            self._run("B4", "final_env_b4_honest"),
+            self._run("B4", "smoke_b4_honest"),
+        ]
+        mixed = _detect_mixed_cohorts(runs)
+        assert "B4 (environmental)" in mixed
+        assert mixed["B4 (environmental)"] == {"final_env_b4", "smoke_b4"}
+
+    def test_same_baseline_different_threat_models_not_mixed(self):
+        """final_env_b4 and final_schem_b4 share baseline B4 but differ in
+        threat_model, so they should NOT trigger the guard."""
+        runs = [
+            self._run("B4", "final_env_b4_honest", "environmental"),
+            self._run("B4", "final_schem_b4_attack", "scheming"),
+        ]
+        assert _detect_mixed_cohorts(runs) == {}
+
+    def test_mixed_within_one_threat_model_only(self):
+        """Only the environmental B4 cohort is mixed; scheming B4 is clean."""
+        runs = [
+            self._run("B4", "final_env_b4_honest", "environmental"),
+            self._run("B4", "smoke_b4_honest", "environmental"),
+            self._run("B4", "final_schem_b4_attack", "scheming"),
+        ]
+        mixed = _detect_mixed_cohorts(runs)
+        assert "B4 (environmental)" in mixed
+        assert "B4 (scheming)" not in mixed
+
+    def test_honest_attack_halves_not_mixed(self):
+        """final_env_b0_honest and final_env_b0_attack are two halves of the
+        same experiment and must NOT trigger the mixed-cohort guard."""
+        runs = [
+            self._run("B0", "final_env_b0_honest"),
+            self._run("B0", "final_env_b0_attack"),
+        ]
+        assert _detect_mixed_cohorts(runs) == {}
+
+    def test_honest_attack_across_prefixes_still_mixed(self):
+        """smoke and final honest/attack halves should still be detected."""
+        runs = [
+            self._run("B4", "final_env_b4_honest"),
+            self._run("B4", "final_env_b4_attack"),
+            self._run("B4", "smoke_b4_attack"),
+        ]
+        mixed = _detect_mixed_cohorts(runs)
+        assert "B4 (environmental)" in mixed
+        assert mixed["B4 (environmental)"] == {"final_env_b4", "smoke_b4"}
+
+    def test_empty_runs(self):
+        assert _detect_mixed_cohorts([]) == {}
+
+
+class TestExperimentFamily:
+    def test_strips_honest(self):
+        assert _experiment_family("final_env_b0_honest") == "final_env_b0"
+
+    def test_strips_attack(self):
+        assert _experiment_family("smoke_b4_attack") == "smoke_b4"
+
+    def test_no_suffix_unchanged(self):
+        assert _experiment_family("final_env_b0") == "final_env_b0"
+
+    def test_suffix_in_middle_unchanged(self):
+        assert _experiment_family("honest_run_b0") == "honest_run_b0"
 
 
 class TestConfigValidation:

@@ -1,0 +1,5 @@
+decision,count
+BLOCK,27
+ALLOW,16
+DEFER_TO_TRUSTED,6
+RESAMPLE,4

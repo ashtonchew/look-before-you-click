@@ -1,7 +1,6 @@
 """Smoke tests for control/controller.py."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from control.controller import review
 

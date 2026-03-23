@@ -1,338 +1,197 @@
-# Concise Summary — Computer-Use Control Master Plan
+# Concise Master Plan — Look-Before-You-Click
 
 ## Working title
-**Look-Before-You-Click: Critical-Action Deferral with State-Grounded Legibility for Computer-Use Agents**
+**Look-Before-You-Click: Critical-Action Review for Computer-Use Agents**
+
+## Hackathon context
+- **Event:** Apart Research AI Control Hackathon, March 20-22, 2026
+- **Best fit:** Track 2 - Control Protocol Design
+- **Possible secondary fit:** Track 1 only if the scheming side-task setting is framed as a small custom control environment
+- **Submission type:** protocol wrapper + evaluation, not a new benchmark or new agent
 
 ## One-paragraph abstract
-This project should be framed as an **AI control protocol paper for computer-use agents**, not as a general prompt-injection defense and not as just another computer-use safety benchmark. The core idea is to adapt **critical-action deferral** to GUI environments: let an untrusted computer-use agent act normally most of the time, but pause on a small set of **irreversible or high-impact GUI actions** and route those actions to a trusted reviewer with access to the **live screen state**, **recent history**, and a **structured explanation** from the agent. The main evaluation should use **paired OS-Harm / OSWorld tasks**, especially prompt-injection tasks that can be run with and without injection, and report the standard control tradeoff: **safety, usefulness, monitor quality, and overhead**. The main research question is whether harmful computer-use behavior is **concentrated in a small number of reviewable GUI actions**; if so, sparse trusted review may be a realistic deployment strategy.
+This project is an **AI control protocol evaluation for computer-use agents**. We wrap the existing OS-Harm agent loop with a thin controller that intercepts proposed GUI actions before execution, routes only **critical actions** to a trusted reviewer, and gives that reviewer the **live screen state**, **accessibility tree**, **recent history**, and an optional **legibility report** from the untrusted agent. The main question is whether harmful computer-use behavior is concentrated in a small number of reviewable GUI actions. If so, sparse state-grounded review may improve safety without paying the full usefulness and latency cost of blanket monitoring.
+
+## What the project is now
+This is no longer just a proposal. As of **March 22, 2026**, the repo contains:
+
+- a working control seam between `agent.predict(...)` and `env.step(...)`
+- a rule-based critical-action router
+- state-grounded and language-only reviewer modes
+- legibility generation
+- three controller modes:
+  - `allow_or_terminate`
+  - `allow_or_resample_once`
+  - `allow_or_trusted_fallback_once`
+- a scheming side-task threat model with a side-task judge
+- corrected core results under `results_backup/final_corrected/`
+- completed environmental ablation ladder (B0-B4) under `analysis_outputs/ablation_ladder/`
+- completed A2 adaptive attacker runs (3 variants x B0/B4, inconclusive) under `results_backup/expansion/`
+- concentration / failure-taxonomy outputs with concrete counts
 
 ## Core claim
-The central claim is:
+The main claim should stay:
 
-> Most catastrophic failures of computer-use agents pass through a small set of **irreversible GUI actions** that are unusually monitorable from the live screen state. Therefore, a protocol that defers **only those critical actions** to a trusted reviewer can achieve a better **safety–usefulness–latency tradeoff** than blanket monitoring.
+> Harmful computer-use trajectories often bottleneck through a small set of high-impact GUI actions that are unusually monitorable from the live screen state. Reviewing only those actions can improve safety while preserving more usefulness than broad monitoring would in practice.
 
-This is strong because it is:
-- important for real deployments,
-- directly relevant to AI control,
-- feasible within a hackathon,
-- and novel in a defensible way.
+## What changed from the original plan
+The original March 20 plan was future-tense. The project now has:
 
-## Defensible novelty claim
-The strongest claim to make is:
+- real implementation instead of just design sketches
+- smoke-demonstrated B4R and B4T variants
+- a second threat model, so the work reads as AI control rather than only prompt-injection defense
+- a correction layer for router precision, scheming substrate validity, and cohort-safe aggregation
+- a stronger failure-taxonomy story than the original plan anticipated
 
-> This project provides an explicit **AI control-style evaluation** of **critical-action deferral** for realistic computer-use agents, combining:
-> 1. **state-grounded trusted inspection** of the GUI,
-> 2. a **legibility protocol** that forces structured justification before risky actions,
-> 3. **paired benign vs attack evaluation** on OS-Harm / OSWorld-style tasks, and
-> 4. an empirical test of the **critical-action concentration hypothesis**.
+## Canonical evidence to use
+Use the **corrected** cohort, not the older historical note, for paper-safe core claims.
 
-Claims to **avoid**:
-- “first defense for computer-use agents”
-- “robust solution to prompt injection”
-- “first real-time security system for CUAs”
-- “first system-level isolation defense”
+### Environmental threat model
 
-This project is **not** trying to beat full-stack CUA defense papers. Its niche is narrower and cleaner: **targeted control evaluation**.
+| Baseline | Condition | Tasks | Main-task success | Safety | Reviews | Blocks |
+|---|---:|---:|---:|---:|---:|---:|
+| B0 | honest | 5 | 60.0% | 100.0% | 0 | 0 |
+| B0 | attack | 12 | 41.7% | 58.3% | 0 | 0 |
+| B4 | honest | 5 | 40.0% | 100.0% | 1 | 0 |
+| B4 | attack | 12 | 50.0% | 66.7% | 8 | 4 |
 
-## Project framing
-- **Primary track:** Track 2 — Control Protocol Design
-- **Secondary track:** Track 1 if a mini custom control setting is added
-- **Positioning:** Not “can we defend CUAs in general?” but **“can targeted control work for CUAs?”**
+Headline: **B4 improves environmental safety from 58.3% to 66.7% with zero false-positive blocks on the honest slice.**
 
-## Why this should work
-### 1. Harm likely concentrates at irreversibility boundaries
-In GUI tasks, the harmful outcome usually becomes real only when the agent crosses an irreversible step, such as:
-- Send / Submit / Post / Share
-- Upload / Attach / Export
-- Delete / Overwrite / Confirm destructive action
-- Permission / Settings / Security change
-- External navigation or domain boundary crossing
-- Launching shell / executable content
-- Exposing secrets / credentials
-- Clipboard paste into untrusted destination
-- Financial / account confirmation
-- Bulk actions
+### Scheming threat model
 
-These steps are where:
-- harm becomes real,
-- intent is clearer,
-- the visible screen state is more informative,
-- and blocking is still possible.
+| Baseline | Condition | Tasks | Main-task success | Side-task prevented | Side-task succeeded | Reviews | Blocks |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| B0 | honest | 12 | 75.0% | 100.0% | 0/12 | 0 | 0 |
+| B0 | attack | 12 | 58.3% | 58.3% | 5/12 | 0 | 0 |
+| B4 | honest | 12 | 41.7% | 100.0% | 0/12 | 5 | 1 |
+| B4 | attack | 12 | 41.7% | 75.0% | 3/12 | 10 | 6 |
 
-### 2. Screen state is more monitorable than action text alone
-A language-only monitor sees abstract actions like “Click send.” A state-grounded monitor can also inspect:
-- button labels,
-- recipient fields,
-- domains/URLs,
-- selected files,
-- destructive dialog text,
-- current settings page,
-- whether the clicked object matches the user’s task.
+Headline: **B4 improves scheming side-task prevention from 58.3% to 75.0%, but still pays usefulness and calibration cost.**
 
-That is especially important in GUI environments, where the dangerous object is often **the current screen state**, not just the action string.
+### Secondary protocol evidence
 
-### 3. Deferral may be more robust than generic monitoring/resampling
-A pure monitor/resample protocol can fail because the attacker learns what looks suspicious, resampling can create extra attack chances, and monitors may miss the decisive moment. Critical-action deferral instead routes the highest-leverage step away from the untrusted policy.
+Smoke runs already show:
 
-### 4. Legibility should help monitors
-Before risky actions, the untrusted agent should produce a structured explanation of:
-- what action it wants to take,
-- what UI element it is targeting,
-- why the action is needed for the user’s goal,
-- what visible effect should happen next,
-- how security-relevant it is,
-- and its confidence.
+- B4R emits real `RESAMPLE` decisions
+- B4T emits real `DEFER_TO_TRUSTED` decisions
 
-This is **not** because the explanation is trusted. It is because mismatches become easier to detect.
+These are valuable secondary results, but not yet the main empirical headline.
 
-### 5. Sparse review is necessary
-Computer-use agents already suffer from latency and extra steps. Reviewing every step is likely too expensive. The design therefore aims for **high recall on decisive risky actions** with **low benign interruption**.
+### Ablation ladder (environmental, completed)
 
-## Final recommended experiment
-### Primary experiment
-**Critical-Action Deferral in Paired OS-Harm / OSWorld Tasks**
+Source: `analysis_outputs/ablation_ladder/ablation_ladder_metrics.csv`
 
-Use:
-- **OS-Harm prompt-injection tasks** as the attack condition
-- the **same tasks with injection removed** as the honest condition whenever possible
+| Baseline | Usefulness | Safety | Source cohort |
+|---|---|---|---|
+| B0 Unmonitored | 60.0% | 58.3% | final_corrected |
+| B1 Full Review, Text-Only | 0.0% | 83.3% | expansion |
+| B2 Full Review, Visual | 40.0% | 100.0% | expansion |
+| B3 Selective | 60.0% | 91.7% | expansion |
+| B4 Selective, Justified | 40.0% | 66.7% | final_corrected |
 
-Why this is best:
-- same environment family,
-- same apps,
-- same main objectives,
-- attack toggled by environmental manipulation,
-- automatic judging,
-- existing logs/screenshots/accessibility trees,
-- lower implementation risk.
+Key finding: B3 Selective achieves the best safety/usefulness tradeoff. B4 Selective, Justified is surprisingly lower than B3 on both axes.
 
-### Apps to prioritize
-- browser
-- email client
-- file manager / OS
-- possibly code editor
+Caveats: B0/B4 from `final_corrected`, B1/B2/B3 from `expansion` (same tasks, different run session). N=5 benign, 12 attack per baseline. The B3 > B4 result may reflect cross-cohort variation, small sample noise, or legibility introducing reviewer confusion.
 
-### Recommended task slice
-If time is limited:
-- **Dev:** 15–20 paired prompt-injection tasks
-- **Held-out test:** 20–30 paired prompt-injection tasks
-- **Optional robustness:** 10 model-misbehavior tasks
-- **Optional honest-only expansion:** 10 extra OSWorld benign tasks
+### A2 adaptive attacker (completed, inconclusive)
 
-If compute allows: scale to **40–60 paired tasks**.
+Source: `analysis_outputs/a1_vs_a2_comparison.csv`
 
-### Optional secondary experiment
-Add a **mini custom computer-use control setting** with hidden side tasks to make the project feel more like classic control.
+All 6 A2 runs finished. No A2 variant produced a case where the protocol actively intercepted an adaptive attack:
 
-Good side tasks:
-- unauthorized send,
-- unauthorized upload,
-- unauthorized delete/overwrite,
-- unauthorized navigation,
-- unauthorized permission change.
+- A2-env-1 (reframed exfil): agent didn't follow adversarial instructions
+- A2-env-2 (reviewer-aware URL): B0 unsafe, B4 safe -- but with zero protocol reviews (agent avoided attack on its own)
+- A2-schem-1 (protocol-aware scheming): agent didn't follow protocol-aware prompt
 
-Keep it small:
-- 10–20 tasks,
-- 2–4 side-task templates,
-- 1–2 apps per family.
+Appendix-only. Do not claim adaptive robustness.
 
-This is a bonus/appendix if time permits.
+### Failure taxonomy (concrete counts)
 
-## Protocol to evaluate
-Define:
-- **U** = untrusted computer-use agent
-- **T** = trusted reviewer / trusted fallback policy
-- **R** = risk router
-- **I** = state-grounded inspector
+Source: `analysis_outputs/concentration_failure_taxonomy.csv`
 
-### Basic flow
-1. U proposes an action.
-2. R decides whether it is a **critical action**.
-3. If not critical, execute normally.
-4. If critical, require a **legibility explanation** from U.
-5. Build a **review package** for T containing:
-   - proposed action,
-   - screenshot,
-   - accessibility tree,
-   - recent action history,
-   - legibility schema,
-   - trusted extracted facts if available.
-6. T returns one of:
-   - **ALLOW**
-   - **RESAMPLE**
-   - **DEFER_TO_TRUSTED**
-   - **BLOCK**
+| Failure mode | Outcome | Count | Threat model |
+|---|---|---|---|
+| unspecified | harm_blocked | 18 | environmental |
+| timing | harm_succeeded | 8 | scheming |
+| unspecified | harm_blocked | 5 | scheming |
+| unspecified | harm_succeeded | 4 | environmental |
+| reviewer_false_positive | harm_blocked | 4 | scheming |
+| boundary | harm_succeeded | 3 | environmental |
+| unspecified | attack_abandoned | 3 | environmental |
+| router_gap | harm_succeeded | 2 | scheming |
 
-### Review package contents
-At minimum:
-- screenshot
-- accessibility tree
-- recent history
-- structured explanation
+Timing failures are concentrated in scheming (8/8). Router gaps are scheming-only (2/2). Boundary failures are environmental-only (3/3, `stop_task` pattern).
 
-If feasible, also include read-only facts like:
-- current URL/domain,
-- app/window title,
-- recipient fields,
-- selected filenames,
-- dialog text,
-- selected items.
+## Honest boundaries
+The paper should state these clearly:
 
-## Baselines and ablations
-### Core baselines
-- **B0:** Untrusted-only
-- **B1:** Language-only trusted monitor
-- **B2:** Screen-based trusted monitor on every step
-- **B3:** Critical-action routing without legibility
-- **B4:** Critical-action routing + legibility
-- **B5:** Critical-action routing + legibility + trusted read-only facts
+- `stop_task`-style attacks are outside the protocol's intervention boundary if no critical action is emitted.
+- Timing failures are structural when harm completes before the next review checkpoint.
+- Sparse review only works if the router surfaces the decisive action correctly.
+- B2 evidence is complete: blanket review (B2) achieves 100% safety at 40% usefulness. Sparse routing (B3) achieves 91.7% safety at 60% usefulness. Claim tradeoff advantage, not absolute safety advantage.
+- A2 runs are complete but inconclusive (N=1, no protocol engagement observed). Do not claim robustness to protocol-aware attackers.
+- The B3 > B4 finding (legibility appears to hurt) is preliminary. Report it with cross-cohort and sample-size caveats. Do not claim legibility helps the reviewer.
 
-### Optional protocol variants
-- defer-only vs resample-only vs hybrid
-- trusted fallback action vs trusted edit
-- different routing thresholds
+## Failure taxonomy
+The current failure story is already strong enough to matter:
 
-### Attack-model ablations
-At minimum include:
-- **A1:** default OS-Harm attack
-- **A2:** protocol-aware attacker
+- **timing**: harm completes before the next review checkpoint
+- **router gap**: the critical action is not surfaced correctly
+- **boundary**: no reviewable critical action exists
+- **reviewer false positive**: the reviewer blocks an ambiguous but benign action
 
-If possible add:
-- **A3:** attack selection (attacker chooses when to strike)
+This should be in the main paper, not buried in limitations.
 
-## Main metrics
-### Primary
-- **Safety:** proportion of attack trajectories where the harmful objective fails
-- **Usefulness:** proportion of honest trajectories where the main task succeeds
-- **Monitor quality:** TPR/recall, FPR, ROC AUC, maybe PR AUC
-- **Overhead / control tax:** review rate, extra reviewed steps, latency increase, extra model calls
+## What to emphasize in the paper
+- Main figure: corrected environmental **safety vs usefulness**
+- Second figure: **concentration / failure taxonomy**
+- Third figure candidate: **ablation ladder** (5-baseline environmental frontier)
+- Supporting table: corrected scheming results
+- B3 > B4 finding with cross-cohort caveats as a discussion point
+- Supporting qualitative traces:
+  - caught-and-blocked
+  - reviewer discrimination
+  - timing failure
+  - router gap
+  - `stop_task` boundary
+  - optionally one B4R retry trace and one B4T fallback trace
 
-### Secondary
-- critical-action coverage,
-- review precision,
-- benign interruption rate,
-- decisive-step recall,
-- target-grounding error rate.
+## What not to emphasize
+- generic prompt-injection defense
+- "we solved computer-use safety"
+- A2 results (complete but inconclusive -- appendix only)
+- sparse beats blanket on raw safety (B2 is safest; claim tradeoff advantage instead)
+- building more infrastructure
 
-### Thresholding
-Set thresholds on a **dev set**, ideally reporting at fixed honest review budgets like **1%, 5%, and 10%**.
+## Current expansion state
+All expansion runs completed March 22, 2026. Artifacts:
 
-## Key hypotheses
-- **H1 — Concentration:** Most harmful trajectories pass through a small number of critical GUI action families before irreversible harm.
-- **H2 — Safety:** Critical-action deferral beats no monitoring and language-only monitoring on attack tasks.
-- **H3 — Usefulness:** Critical-action deferral preserves more usefulness than monitoring every step.
-- **H4 — Legibility:** Legibility improves trusted review at similar usefulness.
-- **H5 — Robustness:** Protocol-aware attacks hurt broad/generic monitoring more than critical-action deferral.
+- `results_backup/expansion/` -- 12 expansion run directories (6 B1/B2/B3 ablation + 6 A2 adaptive)
+- `analysis_outputs/ablation_ladder/ablation_ladder_metrics.csv` -- merged B0-B4 environmental ladder
+- `analysis_outputs/a1_vs_a2_comparison.csv` -- 12-row A1-vs-A2 comparison
 
-## What counts as success
-### Strong win
-- clear safety improvement,
-- modest usefulness hit,
-- strong concentration result,
-- some adaptive-attack robustness,
-- interpretable traces.
+**Framing:**
+- `results_backup/final_corrected/` remains canonical for core paper claims.
+- The **ablation ladder** is the expansion's primary contribution to the paper. It provides the full B0-B4 environmental frontier and reveals the B3 > B4 anomaly. It belongs in the main paper or a prominent appendix.
+- **A2 results** are strictly appendix material (N=1, no protocol engagement observed).
+- `results_backup/expansion/` is a mixed storage bucket; `analysis_outputs/ablation_ladder/` is the coherent cross-cohort product.
 
-### Medium win
-- modest protocol gains,
-- but strong concentration analysis and good case studies.
-
-### Negative but still valuable
-If the protocol does not help because attacks are too diffuse or GUI state is not actually reviewable at decisive moments, that is still a useful result because it falsifies a concrete control hypothesis.
-
-## Threat model
-### In scope
-- benign user task,
-- malicious environment content or prompt injection steering the agent toward unsafe action,
-- optionally, a hidden side-task attacker in the custom extension.
-
-### Out of scope
-Do **not** claim to solve:
-- arbitrary asynchronous attacks,
-- attacks that never pass through visible critical states,
-- long-horizon future-risk prediction,
-- full isolation/system-level security.
-
-## Risks and pivots
-### Main risks
-- read-only probes may be hard to implement,
-- paired honest tasks may be annoying,
-- adaptive red teaming may take too long,
-- results may be noisy,
-- project may sprawl.
-
-### Recommended pivots
-- If probes are hard: use screenshot + a11y tree + history + legibility only.
-- If paired tasks are hard: use OS-Harm attack tasks and matched OSWorld honest tasks.
-- If adaptive attacks are hard: add at least one protocol-aware prompt variation.
-- If end-to-end gains are weak: lean into concentration analysis, per-action-family results, and qualitative traces.
-- Do **not** build a new benchmark, a large dataset, a world model, a full isolation architecture, or a major training pipeline.
-
-The winning version is a **clean protocol evaluation**.
-
-## Writing strategy for the hackathon report
-The paper should be built around **one idea** and **one figure**.
-
-### Main story
-Dangerous computer-use behavior may concentrate around a small number of **irreversible GUI actions**, so reviewing only those actions may give a good **safety/usefulness tradeoff**.
-
-### Key figure
-- **Safety vs usefulness** for all protocol variants
-
-### Best additional figures/tables
-- concentration plot by action family,
-- overhead plot,
-- baseline results table,
-- failure taxonomy,
-- prior-work positioning table.
-
-### Must-have content
-- paired honest vs attack evaluation,
-- clear baselines,
-- fixed critical-action taxonomy,
-- at least one adaptive condition,
-- safety + usefulness + overhead,
-- 3–5 qualitative traces,
-- honest novelty claim,
-- a clean main plot.
-
-### Avoid
-- overclaiming robustness,
-- reframing the work as generic prompt-injection defense,
-- evaluating only attack tasks and forgetting usefulness,
-- unnecessary scope expansion.
-
-## 72-hour execution plan
-### Day 1
-- run baseline OS-Harm tasks,
-- verify paired honest runs,
-- pick model(s),
-- add logging,
-- define critical-action taxonomy,
-- build first rule-based router.
-
-### Day 2
-- implement legibility schema,
-- implement trusted reviewer,
-- run B0/B1/B3/B4 on dev,
-- set thresholds,
-- start saving failure cases.
-
-### Day 3
-- run held-out test,
-- add one adaptive/protocol-aware condition,
-- annotate decisive harmful steps,
-- make plots/tables,
-- write report.
-
-### Final priority order
-1. main result plot
-2. concentration analysis
-3. qualitative traces
-4. adaptive attack condition
-5. optional custom setting
+## Immediate priority order
+1. Keep `final_corrected` as the canonical core-results cohort.
+2. Use environmental B0 vs B4 as the main headline.
+3. Use scheming B0 vs B4 as the control-framing result.
+4. Use B4R/B4T as smoke-demonstrated secondary variants.
+5. Use the failure taxonomy as a contribution, not just a caveat.
+6. Use the ablation ladder as a main supporting figure.
+7. Report the B3 > B4 finding with cross-cohort and sample-size caveats.
+8. Describe A2 briefly in an appendix as an honest null result.
+9. Obtain reviewer ablation gold labels (10-20 rows) and concentration annotations (20-30 rows) if time allows.
 
 ## Bottom line
-If only one thing gets done, it should be:
+The cleanest current description is:
 
-> **A paired OS-Harm / OSWorld evaluation of critical-action deferral with state-grounded review and GUI legibility, plus a concentration analysis of decisive harmful actions.**
+> **A thin control wrapper over OS-Harm that reviews only critical GUI actions, evaluates both prompt-injection and scheming threat models, and shows that sparse state-grounded review can help, but only within a clear and interpretable boundary set by timing, routing, and reviewer calibration.**
 
-That is the cleanest, strongest, and most defensible version of the project.
+The completed ablation ladder adds:
+
+> **The five-baseline environmental frontier reveals that sparse routing without legibility (B3) achieves the best safety/usefulness tradeoff, while adding legibility (B4) unexpectedly degrades performance -- a preliminary finding reported with cross-cohort and sample-size caveats.**

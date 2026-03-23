@@ -1,5 +1,7 @@
 # Final-Push Results Analysis
 
+> **Historical note (2026-03-22):** This document contains pre-correction empirical analysis from the initial final-push runs. Corrected canonical results are in `analysis_outputs/final_corrected/results_summary.csv` and `docs/handoff_final_push_expansion.md` Section 1. Numbers below may differ from corrected values.
+
 **Date:** 2026-03-22
 **Runs completed:** 8/8 (all must-run groups)
 **Runtime:** 3h21m (02:53 - 06:14 EDT)

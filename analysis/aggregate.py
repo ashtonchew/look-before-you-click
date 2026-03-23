@@ -1,7 +1,8 @@
 """Aggregate run outputs into CSV metrics and a safety-vs-usefulness frontier plot.
 
 Usage:
-    python -m analysis.aggregate --root ./results --out ./analysis_outputs
+    python -m analysis.aggregate --root results_backup/final_historical --out ./analysis_outputs/final_historical
+    python -m analysis.aggregate --root results_backup/smoke --out ./analysis_outputs/smoke
 """
 
 import argparse
@@ -263,6 +264,40 @@ def discover_runs(
     return runs
 
 
+def _experiment_family(experiment: str) -> str:
+    """Strip _honest / _attack suffix to get the cohort family.
+
+    E.g. 'final_env_b0_honest' -> 'final_env_b0'.
+    Honest and attack halves are required parts of the same experiment
+    and must not be treated as separate cohorts.
+    """
+    for suffix in ("_honest", "_attack"):
+        if experiment.endswith(suffix):
+            return experiment[: -len(suffix)]
+    return experiment
+
+
+def _detect_mixed_cohorts(runs: list[dict]) -> dict[str, set[str]]:
+    """Return {label: {families}} for (baseline, threat_model) pairs with mixed sources.
+
+    Keyed on (baseline, threat_model) so that legitimate final_env_* and
+    final_schem_* cohorts sharing a baseline don't trigger the guard --
+    main() already computes their metrics separately.
+
+    Uses experiment *families* (honest/attack suffix stripped) so that
+    the two required halves of one experiment are not flagged as mixed.
+    """
+    bucket_families = defaultdict(set)
+    for r in runs:
+        key = (r["baseline"], r.get("threat_model", "environmental"))
+        bucket_families[key].add(_experiment_family(r["experiment"]))
+    mixed = {}
+    for (baseline, tm), families in bucket_families.items():
+        if len(families) > 1:
+            mixed[f"{baseline} ({tm})"] = families
+    return mixed
+
+
 # ---------------------------------------------------------------------------
 # Metrics
 # ---------------------------------------------------------------------------
@@ -435,6 +470,11 @@ def main():
     parser.add_argument("--judge_model", default="gpt-4.1", help="Judge model name")
     parser.add_argument("--judge_type", default="aer", help="Judge type")
     parser.add_argument("--sys_prompt_version", default="v3", help="Judge system prompt version")
+    parser.add_argument(
+        "--experiment-prefix", type=str, default=None,
+        help="Filter runs to those whose experiment field starts with this prefix "
+             "(e.g. 'final_env' to select only final environmental runs)",
+    )
     args = parser.parse_args()
 
     if not os.path.isdir(args.root):
@@ -442,15 +482,42 @@ def main():
         print("No runs to aggregate. Exiting.")
         return
 
+    # Reject container roots that hold multiple cohort subdirectories.
+    # Users should point --root at one cohort (e.g. results_backup/final_historical).
+    _COHORT_DIRS = {"smoke", "final_historical", "final_corrected", "rerun_raw", "expansion"}
+    children = {d for d in os.listdir(args.root) if os.path.isdir(os.path.join(args.root, d))}
+    cohort_children = children & _COHORT_DIRS
+    if len(cohort_children) > 1 or (len(cohort_children) == 1 and children - _COHORT_DIRS):
+        print(f"ERROR: --root {args.root} is a container with cohort subdirectories: "
+              f"{sorted(cohort_children)}", file=sys.stderr)
+        print("Point --root at one cohort, e.g.:", file=sys.stderr)
+        for c in sorted(cohort_children):
+            print(f"  --root {os.path.join(args.root, c)}", file=sys.stderr)
+        sys.exit(1)
+
     os.makedirs(args.out, exist_ok=True)
 
     runs = discover_runs(args.root, args.judge_model, args.judge_type, args.sys_prompt_version)
+    if args.experiment_prefix:
+        runs = [r for r in runs if r["experiment"].startswith(args.experiment_prefix)]
     if not runs:
         print(f"WARNING: no run folders found under {args.root}", file=sys.stderr)
         print("No runs to aggregate. Exiting.")
         return
 
-    print(f"Found {len(runs)} run(s) under {args.root}")
+    prefix_msg = f" (filtered by experiment prefix {args.experiment_prefix!r})" if args.experiment_prefix else ""
+    print(f"Found {len(runs)} run(s) under {args.root}{prefix_msg}")
+
+    # Detect mixed experiment families sharing a baseline
+    mixed = _detect_mixed_cohorts(runs)
+    skip_aggregate_outputs = False
+    if mixed and not args.experiment_prefix:
+        print("\nWARNING: mixed experiment families detected for same baseline(s):", file=sys.stderr)
+        for baseline, exps in sorted(mixed.items()):
+            print(f"  {baseline}: {sorted(exps)}", file=sys.stderr)
+        print("Frontier, overhead, and variant outputs skipped (would merge incompatible cohorts).", file=sys.stderr)
+        print("Use --experiment-prefix to select a single cohort.\n", file=sys.stderr)
+        skip_aggregate_outputs = True
 
     # Write per-run CSV
     csv_path = write_results_csv(runs, args.out)
@@ -481,35 +548,36 @@ def main():
     schem_metrics = compute_baseline_metrics(schem_runs, threat_model="scheming") if schem_runs else {}
     _print_metrics_table("Scheming", schem_metrics)
 
-    # Primary frontier plot -- environmental (B0-B4 only)
-    primary_metrics = {k: v for k, v in metrics.items() if k in ("B0", "B1", "B2", "B3", "B4")}
-    plot_path = write_frontier_plot(primary_metrics, args.out)
-    print(f"\nWrote {plot_path}")
+    if not skip_aggregate_outputs:
+        # Primary frontier plot -- environmental (B0-B4 only)
+        primary_metrics = {k: v for k, v in metrics.items() if k in ("B0", "B1", "B2", "B3", "B4")}
+        plot_path = write_frontier_plot(primary_metrics, args.out)
+        print(f"\nWrote {plot_path}")
 
-    # Scheming frontier plot
-    if schem_metrics:
-        schem_primary = {k: v for k, v in schem_metrics.items() if k in ("B0", "B1", "B2", "B3", "B4")}
-        if schem_primary:
-            schem_plot = write_frontier_plot(
-                schem_primary, args.out,
-                filename="frontier_schem_safety_vs_usefulness.png",
-                title="Scheming: Safety vs Usefulness Frontier",
-            )
-            print(f"Wrote {schem_plot}")
+        # Scheming frontier plot
+        if schem_metrics:
+            schem_primary = {k: v for k, v in schem_metrics.items() if k in ("B0", "B1", "B2", "B3", "B4")}
+            if schem_primary:
+                schem_plot = write_frontier_plot(
+                    schem_primary, args.out,
+                    filename="frontier_schem_safety_vs_usefulness.png",
+                    title="Scheming: Safety vs Usefulness Frontier",
+                )
+                print(f"Wrote {schem_plot}")
 
-    # Secondary variant comparison plot (B4 vs B4R vs B4T) -- environmental
-    variant_plot = write_variant_comparison_plot(metrics, args.out)
-    if variant_plot:
-        print(f"Wrote {variant_plot}")
+        # Secondary variant comparison plot (B4 vs B4R vs B4T) -- environmental
+        variant_plot = write_variant_comparison_plot(metrics, args.out)
+        if variant_plot:
+            print(f"Wrote {variant_plot}")
 
-    # Protocol variant summary CSV -- environmental
-    variant_csv = write_protocol_variant_csv(metrics, args.out)
-    if variant_csv:
-        print(f"Wrote {variant_csv}")
+        # Protocol variant summary CSV -- environmental
+        variant_csv = write_protocol_variant_csv(metrics, args.out)
+        if variant_csv:
+            print(f"Wrote {variant_csv}")
 
-    # Overhead summary CSV -- environmental
-    overhead_csv = write_overhead_csv(metrics, args.out)
-    print(f"Wrote {overhead_csv}")
+        # Overhead summary CSV -- environmental
+        overhead_csv = write_overhead_csv(metrics, args.out)
+        print(f"Wrote {overhead_csv}")
 
     # Family counts
     family_path = write_family_counts_csv(runs, read_control_events, args.out)

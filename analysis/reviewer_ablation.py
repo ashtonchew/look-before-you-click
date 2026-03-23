@@ -6,22 +6,38 @@ Usage:
 """
 
 import argparse
+import asyncio
+import base64
 import csv
+import glob
 import json
 import logging
 import os
+import re
 import sys
+from collections import defaultdict
+
+import httpx
 
 _project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-# Lazy-imported: control.reviewer requires `requests` which may not be installed
-# in analysis-only environments. Import happens inside main() when not dry-running.
+from control.prompts import (  # noqa: E402
+    _LEGIBILITY_SECTION,
+    build_visual_context,
+    format_action_summary,
+    format_history,
+    get_reviewer_prompt,
+)
+from control.reviewer import _parse_json_response, _validate_reviewer_result  # noqa: E402
+from control.types import MODE_ALLOWED_DECISIONS  # noqa: E402
 
 logger = logging.getLogger("ablation")
 
 ABLATION_CONDITIONS = ["action_only", "action_legibility", "action_screen", "full"]
+
+MAX_CONCURRENCY = 20
 
 
 # ---------------------------------------------------------------------------
@@ -36,24 +52,88 @@ def _find_review_package(run_dir: str, step_index: int) -> str | None:
     return None
 
 
-def _reconstruct_screenshot(run_dir: str, step_index: int) -> bytes | None:
-    """Reconstruct screenshot bytes from better_log.json + saved PNGs."""
-    blog_path = os.path.join(run_dir, "better_log.json")
-    if not os.path.exists(blog_path):
+def _screenshot_from_better_log(run_dir: str, step_index: int) -> bytes | None:
+    """Resolve screenshot via better_log.json's exact reference.
+
+    Returns the PNG bytes if the referenced file (or a timestamp-matched
+    fallback) is found on disk, None otherwise.
+    """
+    bl_path = os.path.join(run_dir, "better_log.json")
+    if not os.path.exists(bl_path):
         return None
     try:
-        with open(blog_path, "r") as f:
-            blog = json.load(f)
-        steps = blog.get("steps", [])
-        if step_index >= len(steps):
+        with open(bl_path, "r") as f:
+            bl = json.load(f)
+    except Exception:
+        return None
+
+    steps = bl.get("steps", [])
+    if step_index >= len(steps):
+        return None
+    ref = steps[step_index].get("screenshot_file")
+    if not ref:
+        return None
+
+    # Exact match first
+    exact = os.path.join(run_dir, ref)
+    if os.path.exists(exact):
+        try:
+            with open(exact, "rb") as f:
+                return f.read()
+        except Exception:
             return None
-        screenshot_file = steps[step_index].get("screenshot_file")
-        if not screenshot_file:
-            return None
-        png_path = os.path.join(run_dir, screenshot_file)
-        if not os.path.exists(png_path):
-            return None
-        with open(png_path, "rb") as f:
+
+    # Timestamp fallback: env step counter may differ from logical step
+    # counter, but the @YYYYMMDD@HHMMSS suffix is unique per capture.
+    ts_match = re.search(r"(\d{8}@\d{6})", ref)
+    if ts_match:
+        ts = ts_match.group(1)
+        for p in glob.glob(os.path.join(run_dir, "step_*.png")):
+            if ts in os.path.basename(p):
+                try:
+                    with open(p, "rb") as f:
+                        return f.read()
+                except Exception:
+                    return None
+
+    return None
+
+
+def _reconstruct_screenshot(run_dir: str, step_index: int) -> bytes | None:
+    """Find the screenshot PNG for a given control-event step_index.
+
+    Prefers the exact reference from better_log.json (with timestamp
+    fallback for env/logical counter drift). Falls back to nearest
+    env step number heuristic only when better_log lookup fails.
+    """
+    # Primary: better_log reference
+    result = _screenshot_from_better_log(run_dir, step_index)
+    if result is not None:
+        return result
+
+    # Fallback: nearest step number heuristic
+    pngs = glob.glob(os.path.join(run_dir, "step_*.png"))
+    if not pngs:
+        return None
+
+    _step_re = re.compile(r"step_(\d+)")
+    candidates: list[tuple[int, str]] = []
+    for p in pngs:
+        m = _step_re.search(os.path.basename(p))
+        if m:
+            candidates.append((int(m.group(1)), p))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda c: abs(c[0] - step_index))
+    best_step, best_path = candidates[0]
+
+    if abs(best_step - step_index) > 5:
+        return None
+
+    try:
+        with open(best_path, "rb") as f:
             return f.read()
     except Exception:
         return None
@@ -137,28 +217,30 @@ PROJECTORS = {
 NEEDS_SCREENSHOT = {"action_screen", "full"}
 
 
-def _build_legibility_only_context(legibility_report, _LEGIBILITY_SECTION) -> str:
-    """Build legibility-only visual context for offline ablation."""
-    if not legibility_report:
-        return ""
-    return _LEGIBILITY_SECTION.format(
-        legibility_json=json.dumps(legibility_report, indent=2),
-    )
+# ---------------------------------------------------------------------------
+# Prompt building (mirrors control/reviewer.py logic, keeps it offline)
+# ---------------------------------------------------------------------------
 
-
-def _run_ablation_legibility_review(
-    projected, config, _run_review,
-    format_action_summary, format_history,
-    get_reviewer_prompt, _LEGIBILITY_SECTION,
-):
-    """Run a review with legibility-only visual context (no a11y tree).
-
-    Used only for the action_legibility ablation condition.
-    """
-    visual_context = _build_legibility_only_context(
-        projected.get("legibility_report"), _LEGIBILITY_SECTION,
-    )
+def _build_messages_for_projected(projected: dict, config: dict,
+                                  condition: str) -> list[dict]:
+    """Build the LLM messages list for a projected package + condition."""
     controller_mode = "allow_or_terminate"
+
+    if condition == "action_legibility":
+        legibility_report = projected.get("legibility_report")
+        if legibility_report:
+            visual_context = _LEGIBILITY_SECTION.format(
+                legibility_json=json.dumps(legibility_report, indent=2),
+            )
+        else:
+            visual_context = ""
+    elif config.get("include_visual_context", False):
+        a11y_tree = projected.get("a11y_tree_linearized", "")
+        legibility_report = projected.get("legibility_report")
+        visual_context = build_visual_context(a11y_tree, legibility_report)
+    else:
+        visual_context = ""
+
     prompt_template = get_reviewer_prompt(controller_mode)
     prompt_text = prompt_template.format(
         instruction=projected["instruction"],
@@ -167,12 +249,23 @@ def _run_ablation_legibility_review(
         recent_history=format_history(projected.get("recent_history", [])),
         visual_context=visual_context,
     )
-    return _run_review(
-        prompt_text, projected.get("obs", {}),
-        include_screenshot=False,
-        model=config["reviewer_model"],
-        controller_mode=controller_mode,
+
+    content: list[dict] = [{"type": "text", "text": prompt_text}]
+
+    # Include screenshot for conditions that need it
+    include_screenshot = (
+        condition in NEEDS_SCREENSHOT
+        and config.get("include_visual_context", False)
     )
+    obs = projected.get("obs", {})
+    if include_screenshot and obs.get("screenshot"):
+        screenshot_b64 = base64.b64encode(obs["screenshot"]).decode("utf-8")
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"},
+        })
+
+    return [{"role": "user", "content": content}]
 
 
 def _config_for_condition(condition: str, reviewer_model: str) -> dict:
@@ -187,12 +280,56 @@ def _config_for_condition(condition: str, reviewer_model: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Async LLM calls
+# ---------------------------------------------------------------------------
+
+def _build_openai_payload(model: str, messages: list[dict]) -> dict:
+    payload: dict = {"model": model, "messages": messages, "temperature": 0.1}
+    if model.startswith("o") or model.startswith("gpt-5"):
+        payload.pop("temperature", None)
+        payload["max_completion_tokens"] = 1500
+    else:
+        payload["max_tokens"] = 1500
+    payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+async def _async_call_openai(
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
+    model: str,
+    messages: list[dict],
+) -> str:
+    """Async OpenAI chat completion using httpx."""
+    payload = _build_openai_payload(model, messages)
+    async with semaphore:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            json=payload,
+            timeout=60,
+        )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"OpenAI API error {response.status_code}: {response.text[:500]}"
+        )
+    return response.json()["choices"][0]["message"]["content"]
+
+
+def _parse_and_score(response_text: str) -> str:
+    """Parse reviewer JSON response and extract decision."""
+    parsed = _parse_json_response(response_text)
+    allowed = MODE_ALLOWED_DECISIONS.get("allow_or_terminate")
+    result = _validate_reviewer_result(parsed, allowed_decisions=allowed)
+    decision = result["decision"]
+    return decision if decision in ("ALLOW", "BLOCK") else "BLOCK"
+
+
+# ---------------------------------------------------------------------------
 # Summary computation
 # ---------------------------------------------------------------------------
 
 def _compute_summary(results: list[dict]) -> list[dict]:
     """Compute accuracy, FPR, FNR per condition."""
-    from collections import defaultdict
     groups = defaultdict(list)
     for r in results:
         groups[r["condition"]].append(r)
@@ -286,6 +423,8 @@ def main():
     parser.add_argument("--reviewer_model", default="gpt-5.4-mini")
     parser.add_argument("--conditions", nargs="+", default=ABLATION_CONDITIONS)
     parser.add_argument("--dry_run", action="store_true", help="Validate inputs without calling LLM")
+    parser.add_argument("--concurrency", type=int, default=MAX_CONCURRENCY,
+                        help="Max concurrent API calls")
     args = parser.parse_args()
 
     gold_rows = _load_gold_csv(args.gold)
@@ -294,8 +433,10 @@ def main():
         return
 
     os.makedirs(args.out, exist_ok=True)
-    results = []
     failures = []
+
+    # Phase 1: Load all packages and build work items (synchronous)
+    work_items = []
     valid_count = 0
 
     for row in gold_rows:
@@ -311,8 +452,6 @@ def main():
 
         screenshot = _reconstruct_screenshot(run_dir, step_index)
 
-        # Skip entire row if screenshot missing and any requested condition needs it,
-        # so all conditions are evaluated on the same row set.
         needs_screenshot = any(c in NEEDS_SCREENSHOT for c in args.conditions)
         if needs_screenshot and screenshot is None:
             failures.append({"run_dir": run_dir, "step_index": step_index,
@@ -324,42 +463,21 @@ def main():
         if args.dry_run:
             continue
 
-        from control.reviewer import review as reviewer_review, _run_review
-        from control.prompts import (
-            _LEGIBILITY_SECTION,
-            format_action_summary,
-            format_history,
-            get_reviewer_prompt,
-        )
-
         for condition in args.conditions:
             if condition not in PROJECTORS:
                 continue
 
             projected = PROJECTORS[condition](pkg, screenshot)
             config = _config_for_condition(condition, args.reviewer_model)
+            messages = _build_messages_for_projected(projected, config, condition)
 
-            if condition == "action_legibility":
-                # Build legibility-only visual context offline and call
-                # the shared review helper directly, bypassing review()'s
-                # normal visual-context construction.
-                reviewer_result = _run_ablation_legibility_review(
-                    projected, config, _run_review,
-                    format_action_summary, format_history,
-                    get_reviewer_prompt, _LEGIBILITY_SECTION,
-                )
-            else:
-                reviewer_result = reviewer_review(projected, config)
-            predicted = reviewer_result["decision"]
-            scored = predicted if predicted in ("ALLOW", "BLOCK") else "BLOCK"
-
-            results.append({
+            work_items.append({
                 "run_dir": run_dir,
                 "step_index": step_index,
                 "condition": condition,
-                "predicted_decision": scored,
                 "gold_decision": gold_decision,
-                "is_correct": scored == gold_decision,
+                "messages": messages,
+                "model": args.reviewer_model,
             })
 
     if args.dry_run:
@@ -367,6 +485,12 @@ def main():
               f" ({len(failures)} failures)")
         _write_failures_csv(failures, args.out)
         return
+
+    print(f"Prepared {len(work_items)} API calls from {valid_count} valid rows "
+          f"x {len(args.conditions)} conditions (concurrency={args.concurrency})")
+
+    # Phase 2: Fire all LLM calls concurrently
+    results = asyncio.run(_run_all(work_items, args.concurrency))
 
     _write_results_csv(results, args.out)
     _write_summary_csv(results, args.out)
@@ -376,6 +500,44 @@ def main():
         print(f"\n{len(failures)} skipped rows:")
         for f in failures:
             print(f"  {f}")
+
+
+async def _run_all(work_items: list[dict], concurrency: int) -> list[dict]:
+    """Run all LLM calls concurrently and return scored results."""
+    semaphore = asyncio.Semaphore(concurrency)
+    api_key = os.environ["OPENAI_API_KEY"]
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    results = []
+    completed = 0
+    total = len(work_items)
+
+    async with httpx.AsyncClient(headers=headers) as client:
+        async def _do_one(item: dict) -> dict:
+            nonlocal completed
+            response_text = await _async_call_openai(
+                client, semaphore, item["model"], item["messages"],
+            )
+            predicted = _parse_and_score(response_text)
+            completed += 1
+            if completed % 10 == 0 or completed == total:
+                print(f"  {completed}/{total} calls complete")
+            return {
+                "run_dir": item["run_dir"],
+                "step_index": item["step_index"],
+                "condition": item["condition"],
+                "predicted_decision": predicted,
+                "gold_decision": item["gold_decision"],
+                "is_correct": predicted == item["gold_decision"],
+            }
+
+        tasks = [_do_one(item) for item in work_items]
+        results = await asyncio.gather(*tasks)
+
+    return list(results)
 
 
 if __name__ == "__main__":

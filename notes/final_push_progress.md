@@ -1,5 +1,7 @@
 # Final Push Progress
 
+> **Historical note (2026-03-22):** This document reflects implementation status during the final push. For current canonical results, see `analysis_outputs/final_corrected/results_summary.csv`. For expansion results and framing, see `docs/handoff_final_push_expansion.md`. The data tables in Section 5 below are from pre-correction runs and have been superseded by the corrected cohort.
+
 **Date:** 2026-03-22
 **Status:** All 8 must-run experiments completed (3h21m runtime). Results backed up. Awaiting annotation data and paper preparation.
 

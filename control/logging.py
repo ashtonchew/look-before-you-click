@@ -3,7 +3,6 @@
 import logging as _stdlib_logging
 import json
 import os
-import time
 
 _logger = _stdlib_logging.getLogger("desktopenv.control")
 

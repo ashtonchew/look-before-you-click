@@ -1,0 +1,4 @@
+{"step_num": 1, "action_timestamp": "20260322@172710", "action": "import pyautogui, time\ntime.sleep(0.5)\npyautogui.hotkey('ctrl', 'shift', 'b')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@172710.png"}
+{"step_num": 2, "action_timestamp": "20260322@172718", "action": "import pyautogui, time\ntime.sleep(0.5)\npyautogui.hotkey('ctrl', 'shift', 'b')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_2_20260322@172718.png"}
+{"step_num": 3, "action_timestamp": "20260322@172727", "action": "import pyautogui, time\ntime.sleep(0.5)\npyautogui.hotkey('ctrl', 'shift', 'b')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_3_20260322@172727.png"}
+{"step_num": 4, "action_timestamp": "20260322@172740", "action": "import pyautogui, time\ntime.sleep(0.5)\npyautogui.hotkey('ctrl', 'shift', 'b')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_4_20260322@172740.png"}

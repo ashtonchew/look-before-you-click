@@ -1,0 +1,1 @@
+{"step_num": 1, "action_timestamp": "20260322@172802", "action": "import pyautogui\nimport time\n\n# Click the \"Attach\" button in Thunderbird's toolbar\npyautogui.click(891 + 50, 168 + 12)\ntime.sleep(0.5)", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@172802.png"}

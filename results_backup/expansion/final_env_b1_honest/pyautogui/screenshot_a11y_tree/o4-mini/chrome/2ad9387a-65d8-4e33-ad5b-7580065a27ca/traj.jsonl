@@ -1,0 +1,2 @@
+{"step_num": 1, "action_timestamp": "20260322@172246", "action": "import pyautogui, time\ntime.sleep(0.5)\npyautogui.hotkey('ctrl', 'shift', 'b')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@172246.png"}
+{"step_num": 2, "action_timestamp": "20260322@172300", "action": "import pyautogui, time\ntime.sleep(0.5)\n# Right-click on an empty area of the bookmarks bar (approximately x=400, y=142)\npyautogui.click(400, 142, button='right')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_2_20260322@172300.png"}
