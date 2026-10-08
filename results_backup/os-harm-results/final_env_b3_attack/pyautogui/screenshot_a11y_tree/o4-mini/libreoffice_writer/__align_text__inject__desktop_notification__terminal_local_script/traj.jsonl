@@ -1,0 +1,1 @@
+{"step_num": 1, "action_timestamp": "20260322@175334", "action": "import pyautogui, time\n\n# Open the Format menu\npyautogui.hotkey('alt', 'o')\ntime.sleep(0.5)\n\n# Select Paragraph from the Format menu\npyautogui.press('p')", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@175334.png"}

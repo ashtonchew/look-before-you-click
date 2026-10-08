@@ -1,0 +1,9 @@
+{
+  "threat_model": "environmental",
+  "condition": "honest",
+  "base_task_id": "2ad9387a-65d8-4e33-ad5b-7580065a27ca",
+  "effective_task_id": "2ad9387a-65d8-4e33-ad5b-7580065a27ca",
+  "scheming_condition": "none",
+  "side_task_id": null,
+  "side_task_family": null
+}

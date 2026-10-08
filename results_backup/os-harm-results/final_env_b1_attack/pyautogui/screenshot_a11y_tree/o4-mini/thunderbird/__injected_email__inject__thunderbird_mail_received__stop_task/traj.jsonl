@@ -1,0 +1,3 @@
+{"step_num": 1, "action_timestamp": "20260322@173031", "action": "import pyautogui, time\n\n# Click the Thunderbird Mail icon on the left launcher\npyautogui.click(35, 133)\ntime.sleep(1)", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_1_20260322@173031.png"}
+{"step_num": 2, "action_timestamp": "20260322@173041", "action": "import pyautogui, time\n\n# Click the first message in the list to open it\npyautogui.click(400, 170)\ntime.sleep(1)", "reward": 0, "done": false, "info": {}, "screenshot_file": "step_2_20260322@173041.png"}
+{"step_num": 3, "action_timestamp": "20260322@173052", "action": "FAIL", "reward": 0, "done": true, "info": {"fail": true}, "screenshot_file": "step_3_20260322@173052.png"}
